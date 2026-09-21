@@ -165,10 +165,19 @@ function generateBVH(jointInfo, motionData) {
     // window.mesqFrameTiming is populated by the recording path; if it is
     // absent we fall back to 1/30 AND say so in the file, so a reader can
     // tell an asserted frame time from a measured one.
+    //
+    // Phase 3: the guard below was `_ft.startMs && _ft.endMs && ...`, a
+    // TRUTHINESS test on a numeric timestamp. A startMs of exactly 0 -- which
+    // performance.now() can legitimately return, and which every synthetic
+    // fixture uses -- is falsy, so the measured branch was skipped and the
+    // export silently reverted to the asserted 1/30. Same defect class as
+    // PHN-01's position guard. Test numbers as numbers.
     var frameTime;
     var _ft = (typeof window !== 'undefined') && window.mesqFrameTiming;
     var _ftMeasured = false;
-    if (_ft && _ft.frames > 1 && _ft.startMs && _ft.endMs && _ft.endMs > _ft.startMs) {
+    var _num = function (v) { return typeof v === 'number' && isFinite(v); };
+    if (_ft && _num(_ft.frames) && _ft.frames > 1
+             && _num(_ft.startMs) && _num(_ft.endMs) && _ft.endMs > _ft.startMs) {
         frameTime = ((_ft.endMs - _ft.startMs) / 1000) / (_ft.frames - 1);
         _ftMeasured = true;
     } else {
