@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Root-Anchored Yaw Correction — Proposal Slides</title>
+<style>
+  @page { size: 13.333in 7.5in; margin: 0; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; color: #16181d; }
+
+  .slide {
+    width: 13.333in; height: 7.5in;
+    padding: 0.72in 0.9in 0.95in;
+    page-break-after: always;
+    position: relative;
+    display: flex; flex-direction: column; justify-content: center;
+    background: #fff;
+  }
+  .slide:last-child { page-break-after: auto; }
+
+  h1 { font-size: 46pt; line-height: 1.12; font-weight: 700; letter-spacing: -0.5pt; }
+  h2 { font-size: 30pt; line-height: 1.15; font-weight: 700; letter-spacing: -0.3pt; margin-bottom: 0.28in; }
+  h3 { font-size: 17pt; font-weight: 600; color: #3d6fb4; margin-bottom: 0.14in; }
+  p  { font-size: 16pt; line-height: 1.5; }
+  .lead { font-size: 20pt; line-height: 1.45; }
+  .big  { font-size: 26pt; line-height: 1.35; font-weight: 600; }
+
+  ul { list-style: none; }
+  li { font-size: 16.5pt; line-height: 1.55; margin-bottom: 0.17in; padding-left: 0.34in; position: relative; }
+  li:before { content: "—"; position: absolute; left: 0; color: #9aa5b1; }
+  li.good:before { content: "✓"; color: #1f7a3d; font-weight: 700; }
+  li.bad:before  { content: "✗"; color: #b3261e; font-weight: 700; }
+
+  .kicker { font-size: 12pt; letter-spacing: 1.6pt; text-transform: uppercase; color: #8a929c; margin-bottom: 0.2in; }
+  .num { position: absolute; bottom: 0.42in; right: 0.9in; font-size: 11pt; color: #b6bdc6; }
+  .foot { position: absolute; bottom: 0.42in; left: 0.9in; font-size: 11pt; color: #b6bdc6; }
+
+  .accent { color: #3d6fb4; }
+  .warn   { color: #b3261e; }
+  .ok     { color: #1f7a3d; }
+  em.hl { font-style: normal; background: #fff3cd; padding: 0 4px; }
+
+  .center { justify-content: center; }
+  .figwrap { flex: 1; display: flex; align-items: center; justify-content: center; }
+  .figwrap svg { width: 100%; height: auto; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 14.5pt; }
+  th { text-align: left; font-weight: 600; color: #6b737c; border-bottom: 2px solid #dfe3e8; padding: 0.1in 0.14in; font-size: 13pt; }
+  td { padding: 0.12in 0.14in; border-bottom: 1px solid #eef0f3; vertical-align: top; line-height: 1.4; }
+  tr.pick td { background: #eef5ff; font-weight: 600; }
+
+  .cols { display: flex; gap: 0.6in; flex: 1; }
+  .col { flex: 1; }
+
+  code { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 14pt; background: #f4f6f8; padding: 1px 6px; border-radius: 3px; }
+  .eq { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 17pt; background: #f4f6f8;
+        padding: 0.18in 0.24in; border-left: 4px solid #3d6fb4; line-height: 1.7; }
+
+  .card { border: 1.5px solid #dfe3e8; border-radius: 10px; padding: 0.24in 0.28in; }
+  .card h3 { margin-bottom: 0.1in; }
+  .card p { font-size: 14.5pt; line-height: 1.45; }
+  .stage { border-left: 5px solid #3d6fb4; padding-left: 0.26in; margin-bottom: 0.26in; }
+  .stage.ml { border-left-color: #6a4fb0; }
+  .stage.gate { border-left-color: #b07d28; }
+  .stage b { font-size: 17pt; }
+  .stage span { font-size: 15pt; color: #4a525c; display: block; margin-top: 3px; line-height: 1.45; }
+</style>
+</head>
+<body>
+
+<!-- 1 TITLE -->
+<div class="slide center">
+  <div class="kicker">Machine Learning · Project Proposal</div>
+  <h1>Fixing which way the body<br>is facing</h1>
+  <p class="lead" style="margin-top:0.3in; color:#4a525c;">
+    Root-anchored yaw correction for a magnetometer-free motion-capture suit
+  </p>
+  <p style="margin-top:0.45in; color:#6b737c;">Danyal Khorami · 10 weeks</p>
+  <div class="num">1</div>
+</div>
+
+<!-- 2 THE SYSTEM -->
+<div class="slide">
+  <h2>The system</h2>
+  <div class="cols">
+    <div class="col">
+      <ul>
+        <li><b>15 wearable sensors</b> on the body, one per segment</li>
+        <li>Each measures <b>its own orientation</b></li>
+        <li>An <b>iPhone at the hip</b> tracks where the body is in the room</li>
+        <li>Everything streams to a browser that draws the skeleton</li>
+      </ul>
+    </div>
+    <div class="col" style="display:flex;align-items:center;justify-content:center;">
+      <svg viewBox="0 0 300 330" width="300" height="330">
+        <circle cx="150" cy="34" r="19" fill="none" stroke="#3d6fb4" stroke-width="3"/>
+        <line x1="150" y1="53" x2="150" y2="170" stroke="#3d6fb4" stroke-width="3"/>
+        <line x1="150" y1="80" x2="88"  y2="128" stroke="#3d6fb4" stroke-width="3"/>
+        <line x1="88"  y1="128" x2="72" y2="196" stroke="#3d6fb4" stroke-width="3"/>
+        <line x1="150" y1="80" x2="212" y2="128" stroke="#3d6fb4" stroke-width="3"/>
+        <line x1="212" y1="128" x2="228" y2="196" stroke="#3d6fb4" stroke-width="3"/>
+        <line x1="150" y1="170" x2="112" y2="252" stroke="#3d6fb4" stroke-width="3"/>
+        <line x1="112" y1="252" x2="104" y2="318" stroke="#3d6fb4" stroke-width="3"/>
+        <line x1="150" y1="170" x2="188" y2="252" stroke="#3d6fb4" stroke-width="3"/>
+        <line x1="188" y1="252" x2="196" y2="318" stroke="#3d6fb4" stroke-width="3"/>
+        <g fill="#16181d">
+          <circle cx="150" cy="34" r="5"/><circle cx="150" cy="112" r="5"/>
+          <circle cx="88" cy="128" r="5"/><circle cx="72" cy="196" r="5"/>
+          <circle cx="212" cy="128" r="5"/><circle cx="228" cy="196" r="5"/>
+          <circle cx="112" cy="252" r="5"/><circle cx="104" cy="318" r="5"/>
+          <circle cx="188" cy="252" r="5"/><circle cx="196" cy="318" r="5"/>
+        </g>
+        <rect x="163" y="158" width="26" height="42" rx="5" fill="#fff" stroke="#b07d28" stroke-width="3"/>
+        <text x="200" y="184" font-size="14" fill="#b07d28" font-family="Helvetica">iPhone</text>
+        <circle cx="150" cy="170" r="8" fill="#b3261e"/>
+        <text x="20" y="170" font-size="14" fill="#b3261e" font-family="Helvetica">pelvis</text>
+      </svg>
+    </div>
+  </div>
+  <div class="num">2</div>
+</div>
+
+<!-- 3 THE PROBLEM -->
+<div class="slide center">
+  <div class="kicker">The problem</div>
+  <p class="big">The suit produces a <span class="ok">good pose</span><br>and puts it in the <span class="warn">wrong place</span>.</p>
+  <p class="lead" style="margin-top:0.4in; color:#4a525c;">
+    The arms and legs are correct <b>relative to each other</b>.<br>
+    The whole body faces the wrong direction — and that direction drifts.
+  </p>
+  <div class="num">3</div>
+</div>
+
+<!-- 4 WHY -->
+<div class="slide">
+  <h2>Why: gravity fixes two of three directions</h2>
+  <div class="figwrap">
+<svg viewBox="0 0 1000 300" preserveAspectRatio="xMidYMid meet" font-family="Helvetica,Arial,sans-serif">
+  <rect x="8" y="8" width="474" height="200" fill="#fff" stroke="#c9c9c9" stroke-width="2" rx="12"/>
+  <text x="34" y="48" font-size="24" font-weight="700" fill="#16181d">Accelerometer sees gravity</text>
+  <line x1="110" y1="82" x2="110" y2="160" stroke="#1f7a3d" stroke-width="5"/>
+  <polygon points="110,176 100,156 120,156" fill="#1f7a3d"/>
+  <text x="128" y="128" font-size="22" fill="#4a525c">g</text>
+  <circle cx="248" cy="126" r="46" fill="none" stroke="#1f7a3d" stroke-width="3.5"/>
+  <line x1="248" y1="80" x2="248" y2="172" stroke="#1f7a3d" stroke-width="2" stroke-dasharray="6 4"/>
+  <line x1="202" y1="126" x2="294" y2="126" stroke="#1f7a3d" stroke-width="2" stroke-dasharray="6 4"/>
+  <text x="322" y="116" font-size="24" fill="#1f7a3d" font-weight="600">roll &#10003;</text>
+  <text x="322" y="150" font-size="24" fill="#1f7a3d" font-weight="600">pitch &#10003;</text>
+  <text x="34" y="192" font-size="18" fill="#6b737c">2 of 3 rotations have an absolute reference</text>
+
+  <rect x="518" y="8" width="474" height="200" fill="#fff" stroke="#c9c9c9" stroke-width="2" rx="12"/>
+  <text x="544" y="48" font-size="24" font-weight="700" fill="#16181d">Rotation about gravity has none</text>
+  <ellipse cx="756" cy="132" rx="96" ry="34" fill="none" stroke="#b3261e" stroke-width="3.5" stroke-dasharray="9 6"/>
+  <line x1="756" y1="86" x2="756" y2="132" stroke="#9aa5b1" stroke-width="2.5"/>
+  <polygon points="854,132 836,123 836,141" fill="#b3261e"/>
+  <polygon points="658,132 676,123 676,141" fill="#b3261e"/>
+  <text x="548" y="142" font-size="26" fill="#b3261e" font-weight="700">yaw &#10007;</text>
+  <text x="544" y="192" font-size="18" fill="#6b737c">only a magnetometer or an external camera can fix it</text>
+
+  <rect x="8" y="228" width="984" height="64" fill="#fff" stroke="#c9c9c9" stroke-width="2" rx="12"/>
+  <text x="34" y="268" font-size="22" fill="#16181d">So all 15 sensors start at their own arbitrary heading &#8212; and wander independently.</text>
+</svg>
+</div>
+  <div class="num">4</div>
+</div>
+
+<!-- 5 EVIDENCE -->
+<div class="slide">
+  <h2>What we measured</h2>
+  <table>
+    <tr><th style="width:62%">Observation</th><th>What it means</th></tr>
+    <tr><td>Global orientation error is about <b>3× worse</b> than pose error measured relative to the body's own root</td><td>The skeleton is fine. The <b>frame</b> is wrong.</td></tr>
+    <tr><td>Error is <b>near-uniform across every joint</b>, including the root</td><td>A whole-body error, not a per-limb one</td></tr>
+    <tr><td>Session-to-session alignment <b>changes sign</b></td><td>An arbitrary <b>starting point</b>, not slow drift</td></tr>
+  </table>
+  <p style="margin-top:0.34in; font-size:14pt; color:#6b737c;">
+    The <b>pattern</b> is solid. The exact numbers need re-measuring against a proper optical reference —
+    the old comparison suit was itself inertial and shares the same failure.
+  </p>
+  <div class="num">5</div>
+</div>
+
+<!-- 6 THE FINDING -->
+<div class="slide">
+  <div class="kicker">The finding that changed the plan</div>
+  <h2>The phone already knows which way you face.<br>We throw it away.</h2>
+  <ul style="margin-top:0.1in;">
+    <li class="bad">The <b>hip sensor</b> drives the skeleton's root orientation</li>
+    <li class="bad">The <b>phone's</b> orientation is used only if the hip sensor goes silent for a second</li>
+    <li class="bad">The phone supplies <b>position only</b> — no heading, no lever-arm correction</li>
+  </ul>
+  <p class="lead" style="margin-top:0.3in;">
+    <em class="hl">The one external heading reference in the system is unused as a heading reference.</em>
+  </p>
+  <div class="foot">Traced in <code>js/custom_icm.js</code> lines 582, 603–615, 931</div>
+  <div class="num">6</div>
+</div>
+
+<!-- 7 OPTIONS -->
+<div class="slide">
+  <h2>What could fix it</h2>
+  <table>
+    <tr><th style="width:34%">Option</th><th>Verdict</th></tr>
+    <tr><td>Turn the magnetometer on</td><td class="warn">No — steel, cables, 15 radios. Confidently wrong heading.</td></tr>
+    <tr><td>A better single-sensor filter</td><td>Good hygiene, but <b>cannot invent</b> a heading reference</td></tr>
+    <tr><td>Joint-constraint methods</td><td>Real, magnetometer-free — <b>this is the baseline to beat</b></td></tr>
+    <tr><td>Add a room camera / OptiTrack</td><td>Works, but that is infrastructure. Use it as <b>ground truth</b>.</td></tr>
+    <tr class="pick"><td>Use the phone as a root anchor</td><td>PICKED — the hardware is already worn</td></tr>
+    <tr class="pick"><td>Learn the leftover per-segment error</td><td>PICKED — this is the contribution</td></tr>
+  </table>
+  <div class="num">7</div>
+</div>
+
+<!-- 8 WHY THIS SPLIT -->
+<div class="slide center">
+  <div class="kicker">Why both, in that order</div>
+  <p class="big">The phone can fix <span class="accent">one</span> segment.<br>It cannot fix the other <span class="accent">fourteen</span>.</p>
+  <p class="lead" style="margin-top:0.42in; color:#4a525c;">
+    It tells you where the <b>pelvis</b> points.<br>
+    It tells you nothing about whether the left forearm has drifted relative to it.
+  </p>
+  <p class="lead" style="margin-top:0.34in;">
+    That leftover is recoverable only from <b>body structure and motion</b>.<br>
+    <em class="hl">That is the learning problem.</em>
+  </p>
+  <div class="num">8</div>
+</div>
+
+<!-- 9 METHOD -->
+<div class="slide">
+  <h2>The method</h2>
+  <div class="stage">
+    <b>Stage&nbsp;1 &nbsp;·&nbsp; Anchor the root &nbsp;<span style="color:#3d6fb4">(no ML)</span></b>
+    <span>Use the phone's heading for the pelvis. Deterministic, cheap, and it must be measured first.</span>
+  </div>
+  <div class="stage ml">
+    <b>Stage&nbsp;2 &nbsp;·&nbsp; Learn the leftover &nbsp;<span style="color:#6a4fb0">(the model)</span></b>
+    <span>A small network predicts 14 heading corrections — one per non-root sensor. ~200k parameters.</span>
+  </div>
+  <div class="stage gate">
+    <b>Stage&nbsp;3 &nbsp;·&nbsp; Know when to stop</b>
+    <span>The model also outputs its confidence. When the motion doesn't reveal the answer, it corrects less instead of guessing.</span>
+  </div>
+  <p style="margin-top:0.16in; font-size:15pt; background:#fff3cd; padding:0.16in 0.2in; border-radius:6px;">
+    <b>Week 3 is a go/no-go gate.</b> If Stage 1 alone fixes most of it, the honest answer is
+    "this was a missing coordinate transform, not a missing model" — and that is a result worth publishing.
+  </p>
+  <div class="num">9</div>
+</div>
+
+<!-- 10 STAGE 1 -->
+<div class="slide">
+  <h2>Stage 1 — anchor the root</h2>
+  <p class="lead" style="margin-bottom:0.24in;">Put the pelvis where the phone says it is, then carry that correction to every segment.</p>
+  <div class="eq">
+    pelvis pose &nbsp;=&nbsp; phone pose &nbsp;×&nbsp; (phone → pelvis calibration)<br><br>
+    correction &nbsp;C₀&nbsp; = &nbsp;(phone heading) × (suit heading)⁻¹<br><br>
+    every segment &nbsp;←&nbsp; C₀ &nbsp;×&nbsp; segment
+  </div>
+  <ul style="margin-top:0.24in;">
+    <li>Needs a <b>shared clock</b> first — 16 devices, 16 independent clocks</li>
+    <li>Needs the <b>camera-to-hip offset</b>, or the position is wrong every time the pelvis turns</li>
+    <li>We test <b>full rotation</b> vs <b>heading-only</b> and let the data choose</li>
+  </ul>
+  <div class="num">10</div>
+</div>
+
+<!-- 11 MODEL -->
+<div class="slide">
+  <h2>Stage 2 — the model</h2>
+  <div class="cols">
+    <div class="col">
+      <h3>Architecture</h3>
+      <ul style="font-size:15.5pt;">
+        <li><b>Graph encoder</b> over the skeleton — a forearm only talks to its neighbours</li>
+        <li><b>Bidirectional GRU</b>, ~2 s window — the project is offline, so future context is free</li>
+        <li>Output per sensor: a <b>heading correction</b> + <b>a confidence</b></li>
+      </ul>
+    </div>
+    <div class="col">
+      <h3>Why it is small</h3>
+      <ul style="font-size:15.5pt;">
+        <li>It only corrects a <b>residual</b> — the physics is handed to it for free</li>
+        <li>The correction is locked to the <b>gravity axis</b>, so it <b>cannot</b> break roll or pitch</li>
+        <li>~200k parameters: runs on a laptop, plausible on-device later</li>
+      </ul>
+    </div>
+  </div>
+  <p style="margin-top:0.1in; font-size:14.5pt; color:#6b737c;">
+    Trained on <b>AMASS</b> motion data with simulated sensors, so the true answer is known exactly.
+    Corruption (drift, dropouts, phone outages, mount slip) is modelled from <b>real measured</b> distributions.
+  </p>
+  <div class="num">11</div>
+</div>
+
+<!-- 12 RL -->
+<div class="slide">
+  <h2>On reinforcement learning</h2>
+  <div class="cols">
+    <div class="col card" style="border-color:#f0c7c2;">
+      <h3 style="color:#b3261e;">Not for the core task</h3>
+      <p>Where we have ground truth, the right answer is <b>known</b>. That is supervised learning.
+      RL would throw that signal away and learn the same thing slower and less stably.</p>
+    </div>
+    <div class="col card" style="border-color:#bcd8bc;">
+      <h3 style="color:#1f7a3d;">But the goal is right</h3>
+      <p><b>1. Self-supervised adaptation</b> — at deployment there are no labels, but there are free
+      consistency checks: feet shouldn't slide, joints have limits, gait is symmetric. Improve against those.</p>
+      <p style="margin-top:0.12in;"><b>2. A small trust policy</b> — "how much do I trust the phone right now?"
+      is a genuine sequential decision. Small, and a fair stretch goal.</p>
+    </div>
+  </div>
+  <div class="num">12</div>
+</div>
+
+<!-- 13 EVALUATION -->
+<div class="slide">
+  <h2>How we will know it worked</h2>
+  <div class="cols">
+    <div class="col">
+      <h3>Measured</h3>
+      <ul style="font-size:15.5pt;">
+        <li>Heading error per segment, in degrees</li>
+        <li>Joint <b>position</b> error after forward kinematics</li>
+        <li>Drift rate in degrees per minute</li>
+        <li>Worst-case, not just average</li>
+      </ul>
+    </div>
+    <div class="col">
+      <h3>The rules we set in advance</h3>
+      <ul style="font-size:15.5pt;">
+        <li>The best baseline is <b>frozen before</b> the test set is opened</li>
+        <li>Training and test use <b>different people</b></li>
+        <li>Absolute claims need <b>optical ground truth</b> — another inertial suit is not a reference</li>
+      </ul>
+    </div>
+  </div>
+  <div class="num">13</div>
+</div>
+
+<!-- 14 TIMELINE -->
+<div class="slide">
+  <h2>Ten weeks</h2>
+  <table style="font-size:15.5pt;">
+    <tr><th style="width:14%">Weeks</th><th>Work</th></tr>
+    <tr><td><b>1–2</b></td><td>Audit the phone path, freeze conventions, add timestamps and tracking state to the logs</td></tr>
+    <tr style="background:#fff3cd;"><td><b>3</b></td><td><b>Go / no-go gate</b> — measure the deterministic phone anchor on its own</td></tr>
+    <tr><td><b>4–5</b></td><td>Simulated-sensor data generator, corruption model, evaluation harness</td></tr>
+    <tr><td><b>6</b></td><td>Classical and per-sensor baselines — frozen</td></tr>
+    <tr><td><b>7–8</b></td><td>Train the model; ablations; uncertainty analysis</td></tr>
+    <tr><td><b>9</b></td><td>Real captures against an optical reference</td></tr>
+    <tr><td><b>10</b></td><td>Statistics, failure analysis, write-up</td></tr>
+  </table>
+  <p style="margin-top:0.26in; font-size:15pt;">
+    The risky weeks are <b>first</b>, on purpose. If the phone doesn't send what we need,
+    I want to know in week 1 — not week 7.
+  </p>
+  <div class="num">14</div>
+</div>
+
+<!-- 15 RISK -->
+<div class="slide center">
+  <div class="kicker">The honest risk</div>
+  <p class="big">Stage 1 might fix most of it<br>without any machine learning.</p>
+  <p class="lead" style="margin-top:0.4in; color:#4a525c;">
+    That would be a <b>real result</b>, not a failure: it would show the defect was a missing
+    coordinate transform rather than something needing a neural network.
+  </p>
+  <p class="lead" style="margin-top:0.3in;">
+    The gate is in <b>week 3</b> so there is time to pivot — to packet-loss reconstruction
+    or tracking-quality prediction, on the same data.
+  </p>
+  <div class="num">15</div>
+</div>
+
+<!-- 16 CONTRIBUTION -->
+<div class="slide">
+  <h2>What this contributes</h2>
+  <ul style="font-size:17.5pt;">
+    <li>A working method to <b>anchor a magnetometer-free suit</b> to a phone's visual tracking — the transform the system is missing today</li>
+    <li>A <b>small, uncertainty-aware model</b> that corrects only what becomes knowable once that anchor exists</li>
+    <li>A benchmark that <b>separates</b> the causes — start-up offset, drift, tracking resets, mount slip, timing error</li>
+    <li>Evidence about <b>when a deterministic fix is enough</b> and when learned body structure genuinely adds something</li>
+  </ul>
+  <p class="lead" style="margin-top:0.3in;">
+    <em class="hl">The project is useful whichever way the hypothesis falls.</em>
+  </p>
+  <div class="num">16</div>
+</div>
+
+<!-- 17 END -->
+<div class="slide center">
+  <h1 style="font-size:40pt;">Thank you</h1>
+  <p class="lead" style="margin-top:0.3in; color:#4a525c;">Questions</p>
+  <div class="num">17</div>
+</div>
+
+</body>
+</html>

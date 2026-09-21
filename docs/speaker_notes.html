@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Speaker Notes — Root-Anchored Yaw Correction</title>
+<style>
+  @page { size: letter; margin: 0.7in 0.75in 0.8in; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; color: #16181d; font-size: 10.5pt; line-height: 1.5; }
+
+  h1 { font-size: 22pt; font-weight: 700; letter-spacing: -0.3pt; }
+  .sub { font-size: 11pt; color: #6b737c; margin-top: 4px; }
+  .intro { border: 1.5px solid #dfe3e8; border-radius: 8px; padding: 12px 14px; margin: 16px 0 22px; background: #fafbfc; }
+  .intro p { font-size: 10pt; margin-bottom: 6px; }
+  .intro p:last-child { margin-bottom: 0; }
+
+  .slide { page-break-inside: avoid; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid #e8ebee; }
+  .slide:last-child { border-bottom: none; }
+  .hdr { display: flex; align-items: baseline; gap: 10px; margin-bottom: 9px; }
+  .badge { background: #16181d; color: #fff; font-size: 9.5pt; font-weight: 700;
+           width: 26px; height: 26px; border-radius: 5px; display: inline-flex;
+           align-items: center; justify-content: center; flex: none; }
+  .title { font-size: 13.5pt; font-weight: 700; }
+  .time { margin-left: auto; font-size: 9pt; color: #8a929c; white-space: nowrap; }
+
+  .block { margin: 8px 0 0 36px; }
+  .lbl { font-size: 8.5pt; font-weight: 700; letter-spacing: 1pt; text-transform: uppercase; margin-bottom: 3px; }
+  .simple .lbl { color: #1f7a3d; }
+  .tech .lbl   { color: #3d6fb4; }
+  .ask .lbl    { color: #b07d28; }
+  .simple p { background: #f2f8f3; border-left: 3px solid #1f7a3d; padding: 7px 11px; border-radius: 0 4px 4px 0; }
+  .tech p   { background: #f3f6fb; border-left: 3px solid #3d6fb4; padding: 7px 11px; border-radius: 0 4px 4px 0; }
+  .ask p    { background: #fdf8ef; border-left: 3px solid #b07d28; padding: 7px 11px; border-radius: 0 4px 4px 0; }
+  .ask b { color: #8a6520; }
+
+  code { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 9.5pt;
+         background: rgba(0,0,0,.055); padding: 0 4px; border-radius: 3px; }
+  .pause { display: inline-block; background: #fff3cd; padding: 0 5px; border-radius: 3px; font-weight: 600; }
+</style>
+</head>
+<body>
+
+<h1>Speaker notes</h1>
+<div class="sub">Root-Anchored Yaw Correction — project proposal · 17 slides · about 13 minutes</div>
+
+<div class="intro">
+  <p><b>How to use this.</b> The <span style="color:#1f7a3d;font-weight:700">green</span> block is what to
+  actually say — plain language, no jargon, safe for any audience. The
+  <span style="color:#3d6fb4;font-weight:700">blue</span> block is the precise version: use it if your
+  audience is technical, or hold it for questions. The
+  <span style="color:#b07d28;font-weight:700">amber</span> block is a question you should expect.</p>
+  <p><b>If you are short on time</b>, the four slides that carry the argument are
+  <b>3 (the problem)</b>, <b>6 (the finding)</b>, <b>8 (why both)</b> and <b>9 (the method)</b>.
+  Everything else can be compressed.</p>
+  <p><b>The one sentence to land:</b> the phone already knows which way the body is facing, the system
+  currently ignores it, and once you fix that the remaining error is a genuine learning problem.</p>
+</div>
+
+<!-- 1 -->
+<div class="slide">
+  <div class="hdr"><span class="badge">1</span><span class="title">Title</span><span class="time">~20 s</span></div>
+  <div class="block simple"><div class="lbl">Say it simply</div>
+  <p>"This project is about a motion-capture suit that gets the body's <i>shape</i> right but points it
+  in the wrong direction. I want to fix that using the phone that's already strapped to the hip, plus
+  a small machine-learning model for the part the phone can't reach."</p></div>
+  <div class="block tech"><div class="lbl">Technical</div>
+  <p>Root-anchored differential yaw correction for a magnetometer-free 15-node inertial suit, using an
+  iPhone's visual–inertial pelvis pose as the external heading reference and a skeleton-aware temporal
+  model for the residual per-segment yaw.</p></div>
+</div>
+
+<!-- 2 -->
+<div class="slide">
+  <div class="hdr"><span class="badge">2</span><span class="title">The system</span><span class="time">~40 s</span></div>
+  <div class="block simple"><div class="lbl">Say it simply</div>
+  <p>"Fifteen small sensors, one on each body segment. Each one figures out its own tilt and rotation.
+  Separately, an iPhone on the hip uses its camera to work out where you are in the room. All of it
+  streams into a browser that draws the skeleton in 3D."</p></div>
+  <div class="block tech"><div class="lbl">Technical</div>
+  <p>ICM-20948 IMUs running the on-chip DMP in 6-axis Game Rotation Vector mode. ESP-NOW to a hub,
+  USB to the browser. The phone runs ARKit visual–inertial odometry and joins the same stream over a
+  WebSocket.</p></div>
+</div>
+
+<!-- 3 -->
+<div class="slide">
+  <div class="hdr"><span class="badge">3</span><span class="title">The problem</span><span class="time">~45 s</span></div>
+  <div class="block simple"><div class="lbl">Say it simply</div>
+  <p>"Here's the strange part. If you look at the skeleton on its own, it looks <i>right</i> — the arms
+  and legs are in sensible positions relative to each other. But the whole body is rotated the wrong
+  way in the room. And it slowly gets worse during a session." <span class="pause">pause here</span></p></div>
+  <div class="block tech"><div class="lbl">Technical</div>
+  <p>Root-relative pose error is small; global joint orientation error is roughly three times larger,
+  and near-uniform across every joint including the root. That uniformity is the signature of a
+  whole-body frame error, not per-limb estimation error.</p></div>
+</div>
+
+<!-- 4 -->
+<div class="slide">
+  <div class="hdr"><span class="badge">4</span><span class="title">Why: gravity fixes two of three</span><span class="time">~70 s</span></div>
+  <div class="block simple"><div class="lbl">Say it simply</div>
+  <p>"The reason is physics, not a bug. Every sensor can feel gravity, so it always knows which way is
+  down — that pins two of the three ways it can rotate. But spinning <i>around</i> the down direction
+  doesn't change what gravity feels like at all. So that third one is invisible to the sensor. A compass
+  would fix it, but we deliberately turn the compass off: a room full of steel and fifteen radios makes
+  a compass confidently wrong, which is worse than no compass."</p></div>
+  <div class="block tech"><div class="lbl">Technical</div>
+  <p>Gravity observes two rotational DOF; heading about the gravity vector is unobservable from
+  accelerometer + gyroscope alone. Each sensor therefore initialises at an arbitrary heading and
+  integrates gyro bias independently. Magnetometer is disabled by design — hard/soft-iron distortion in
+  the capture volume is position-dependent and produces systematic heading error.</p></div>
+  <div class="block ask"><div class="lbl">Expect</div>
+  <p><b>"Why not just calibrate the magnetometer?"</b> — Because the distortion changes as you walk
+  around the room, so a one-time calibration doesn't hold. And it's the constraint that makes the
+  project interesting: a lot of low-cost suits have exactly this problem.</p></div>
+</div>
+
+<!-- 5 -->
+<div class="slide">
+  <div class="hdr"><span class="badge">5</span><span class="title">What we measured</span><span class="time">~50 s</span></div>
+  <div class="block simple"><div class="lbl">Say it simply</div>
+  <p>"We didn't guess at this. Three things point the same way: the global error is about three times
+  the local error; the error is spread evenly over every joint rather than concentrated in one limb;
+  and between two recordings the correction needed <i>flipped sign</i>. That last one matters — it says
+  the problem is mostly a wrong <i>starting point</i>, not something slowly creeping."</p></div>
+  <div class="block tech"><div class="lbl">Technical</div>
+  <p>The ratio and the sign change are within-file, so they survive both the timing and the scale
+  contamination in the old exports. The absolute magnitudes do not, and I'm not quoting them: the
+  reference suit was itself inertial and shares the failure mode, and the exports carried about 7%
+  progressive time dilation from a hardcoded frame rate.</p></div>
+  <div class="block ask"><div class="lbl">Expect</div>
+  <p><b>"Why won't you give exact numbers?"</b> — Because the only reference we had was another
+  inertial suit with the same blind spot. Getting a proper optical reference is week 9 of the plan.</p></div>
+</div>
+
+<!-- 6 -->
+<div class="slide">
+  <div class="hdr"><span class="badge">6</span><span class="title">The finding</span><span class="time">~60 s — the turn</span></div>
+  <div class="block simple"><div class="lbl">Say it simply</div>
+  <p>"Then I read the code, and found something I didn't expect. The phone <i>does</i> report which way
+  it's facing — and we throw that away. The system uses the hip sensor for direction instead, and only
+  falls back to the phone if the hip sensor goes quiet for a full second. The phone is used for position
+  and nothing else." <span class="pause">pause</span> "So the one thing in the system that actually
+  knows which way you're facing is being ignored."</p></div>
+  <div class="block tech"><div class="lbl">Technical</div>
+  <p><code>js/custom_icm.js</code>: at line 603 the <code>HipsAlt</code> branch — the hip pod — writes the
+  root's global and local orientation. At line 582 the phone branch is gated on
+  <code>hipsAltLast + 1000 &lt; now</code>, so it only runs as a timeout fallback. At line 931 the phone's
+  <code>px,py,pz</code> are scaled by a constant into the root position, with no camera-to-hip lever arm,
+  behind a truthiness guard that drops a coordinate of exactly zero.</p></div>
+  <div class="block ask"><div class="lbl">Expect</div>
+  <p><b>"So is this just a bug fix?"</b> — Stage 1 is, and I'm upfront about that. But it only fixes
+  <i>one</i> segment out of fifteen. That's the next slide.</p></div>
+</div>
+
+<!-- 7 -->
+<div class="slide">
+  <div class="hdr"><span class="badge">7</span><span class="title">What could fix it</span><span class="time">~55 s</span></div>
+  <div class="block simple"><div class="lbl">Say it simply</div>
+  <p>"I looked at the obvious options. Turn the compass on — no, that's the thing we're avoiding. A
+  better filter on each sensor — helps a bit, but it can't invent information that isn't there. Methods
+  that use knowledge of how joints bend — those are real and I'll use them as the bar to beat. Add a
+  room camera — that works, but then you've bought a camera system, so I'll use that as the
+  <i>measuring stick</i>, not the answer. What's left is the phone we're already wearing."</p></div>
+  <div class="block tech"><div class="lbl">Technical</div>
+  <p>Kinematic-constraint methods (joint range-of-motion, hinge-axis estimation, zero-velocity updates)
+  are the magnetometer-free classical baseline and are genuinely strong under informative motion. They
+  need idealised joint models and careful gating, and degrade on static or symmetric poses. Optical
+  capture is reserved as ground truth; an AprilTag board is held as an optional recovery anchor.</p></div>
+</div>
+
+<!-- 8 -->
+<div class="slide">
+  <div class="hdr"><span class="badge">8</span><span class="title">Why both, in that order</span><span class="time">~60 s — the argument</span></div>
+  <div class="block simple"><div class="lbl">Say it simply</div>
+  <p>"Here's the key point. The phone is on the hip, so it can tell you which way the <i>hips</i> are
+  facing. It has nothing at all to say about whether the left forearm has drifted. So the phone fixes
+  one segment and leaves fourteen. Those fourteen can only be worked out from how a human body is
+  actually put together and how it moves — which is exactly the kind of thing you learn from data
+  rather than write down by hand."</p></div>
+  <div class="block tech"><div class="lbl">Technical</div>
+  <p>The phone observes the common mode. The residual is differential per-segment yaw, which is
+  identifiable from articulated structure and motion. Fifteen orientations with mutually wrong headings
+  produce an anatomically implausible pose; a model trained on large-scale motion capture learns that
+  plausibility, so the corrections become the ones that make the pose look like real motion. VIP
+  (von Marcard, ECCV 2018) optimises exactly one vertical-axis heading parameter per IMU — same
+  variable, solved with an external camera instead.</p></div>
+</div>
+
+<!-- 9 -->
+<div class="slide">
+  <div class="hdr"><span class="badge">9</span><span class="title">The method</span><span class="time">~75 s</span></div>
+  <div class="block simple"><div class="lbl">Say it simply</div>
+  <p>"Three stages. First, use the phone to set the hips — no machine learning, just geometry. Second, a
+  small model estimates the leftover error for the other fourteen sensors. Third — and this matters —
+  the model also says how confident it is, so when you're standing still and there's genuinely nothing
+  to go on, it backs off instead of making something up. And there's a checkpoint in week three: if
+  stage one alone fixes most of it, I'll say so."</p></div>
+  <div class="block tech"><div class="lbl">Technical</div>
+  <p>Stage 1 is a deterministic SO(3) root substitution, with a yaw-only variant compared empirically.
+  Stage 2 predicts 14 gravity-axis residuals with the root residual fixed to zero. Stage 3 predicts
+  heteroscedastic log-variance per sensor and gates the correction, following Kendall &amp; Gal
+  (NeurIPS 2017), which is also how EgoLocate and RobustCap weight visual evidence.</p></div>
+  <div class="block ask"><div class="lbl">Expect</div>
+  <p><b>"What if the gate says no ML is needed?"</b> — Then that's the finding, and it's worth
+  reporting: it would mean the defect was a missing coordinate transform. Slide 15 covers the pivot.
+  <i>Say this confidently — it reads as rigour, not as hedging.</i></p></div>
+</div>
+
+<!-- 10 -->
+<div class="slide">
+  <div class="hdr"><span class="badge">10</span><span class="title">Stage 1 — anchor the root</span><span class="time">~55 s</span></div>
+  <div class="block simple"><div class="lbl">Say it simply</div>
+  <p>"Mechanically it's simple: work out the rotation between where the phone says the hips point and
+  where the suit thinks they point, then apply that same rotation to everything. Two things have to be
+  right first — the two devices need a shared clock, and we need to know exactly how the phone is
+  mounted relative to the hip, because the camera isn't sitting at the hip joint."</p></div>
+  <div class="block tech"><div class="lbl">Technical</div>
+  <p>Pelvis pose is the phone pose composed with the rigid phone→pelvis transform, including the
+  camera-to-hip lever arm — omitting it injects position error proportional to pelvis rotation. Timing
+  is an affine map per device clock, offset <i>and</i> skew, because there are sixteen independent
+  clocks. Online temporal calibration (Qin &amp; Shen, IROS 2018) shows modest offsets materially
+  degrade visual–inertial fusion.</p></div>
+</div>
+
+<!-- 11 -->
+<div class="slide">
+  <div class="hdr"><span class="badge">11</span><span class="title">Stage 2 — the model</span><span class="time">~70 s</span></div>
+  <div class="block simple"><div class="lbl">Say it simply</div>
+  <p>"The model is deliberately small — about two hundred thousand parameters, which is tiny by modern
+  standards. Two ideas. First, a sensor only exchanges information with its <i>neighbours</i> on the
+  body: your forearm's error is constrained by your upper arm and hand, not by your opposite foot.
+  Second, it looks at a couple of seconds at a time, because an error only becomes visible once that
+  limb moves. And I train it on a big public motion-capture dataset with simulated sensors, so I know
+  the exact right answer."</p></div>
+  <div class="block tech"><div class="lbl">Technical</div>
+  <p>Graph encoder over skeleton adjacency, bidirectional GRU over a ~2 s window, per-segment head
+  emitting (sin δψ, cos δψ, log σ²). 6D rotation representation (Zhou, CVPR 2019) for continuity;
+  circular output avoids the ±π discontinuity. Losses: geodesic SO(3), differentiable-FK joint position,
+  Gaussian NLL, and a smoothness term on the correction rather than on the motion. Trained on AMASS
+  with virtual sensors; corruption distributions calibrated from instrumentation measured on the real
+  hardware.</p></div>
+  <div class="block ask"><div class="lbl">Expect</div>
+  <p><b>"Why so small? Why not a transformer?"</b> — Because it only predicts a <i>residual</i>. The
+  physics and the skeleton are given to it for free, and the real dataset is small enough that a big
+  model would just memorise it. The correction is also locked to the gravity axis, so it structurally
+  cannot break the roll and pitch that are already correct.</p></div>
+</div>
+
+<!-- 12 -->
+<div class="slide">
+  <div class="hdr"><span class="badge">12</span><span class="title">On reinforcement learning</span><span class="time">~60 s</span></div>
+  <div class="block simple"><div class="lbl">Say it simply</div>
+  <p>"I was asked about using reinforcement learning, so let me be straight about it. For the main job
+  it's the wrong tool — when you already know the right answer from your training data, you should just
+  learn it directly; reinforcement learning would throw that away and be slower. But the <i>instinct</i>
+  is right, because once the suit is out in the real world there is no right answer to compare against.
+  So there are two places it does fit: the system can keep improving itself against things it can check
+  for free — feet shouldn't slide, joints don't bend backwards — and separately, deciding how much to
+  trust the phone moment to moment is a real decision problem. That second one is a stretch goal."</p></div>
+  <div class="block tech"><div class="lbl">Technical</div>
+  <p>Supervised learning dominates wherever labels exist (AMASS, optical). The deployment-time goal is
+  better framed as self-supervised test-time adaptation (cf. Tent, ICLR 2021) against consistency
+  signals: anchor agreement, foot-contact non-slip, joint limits, gait symmetry. The genuinely
+  RL-shaped sub-problem is a trust-gating policy over phone vs suit, which is a contextual bandit over
+  a handful of discrete trust levels with reward = negative drift proxy.</p></div>
+  <div class="block ask"><div class="lbl">Expect</div>
+  <p><b>"So you're not doing RL?"</b> — Not for the core, and I'd rather say that now than defend a
+  weaker result later. The adaptation piece delivers what RL was wanted <i>for</i>.</p></div>
+</div>
+
+<!-- 13 -->
+<div class="slide">
+  <div class="hdr"><span class="badge">13</span><span class="title">How we'll know it worked</span><span class="time">~55 s</span></div>
+  <div class="block simple"><div class="lbl">Say it simply</div>
+  <p>"I measure heading error in degrees per body part, and also where the joints end up in space,
+  because a small error at the hips becomes a big error at the hand. Three rules I'm setting in advance:
+  I pick the baseline to beat <i>before</i> I look at the test data; I train and test on different
+  people; and I won't claim real-world accuracy without a proper optical system — comparing against
+  another inertial suit proves nothing, because it has the same blind spot."</p></div>
+  <div class="block tech"><div class="lbl">Technical</div>
+  <p>Primary: per-segment gravity-axis heading error, SO(3) geodesic error, and global joint-position
+  RMSE after forward kinematics, with session-level paired bootstrap CIs. The strongest baseline is
+  selected on validation and frozen before the test set is opened. Splits are subject-disjoint. Exactly
+  one optical-to-session registration at initialisation — per-frame alignment would erase the
+  phenomenon being measured.</p></div>
+</div>
+
+<!-- 14 -->
+<div class="slide">
+  <div class="hdr"><span class="badge">14</span><span class="title">Ten weeks</span><span class="time">~50 s</span></div>
+  <div class="block simple"><div class="lbl">Say it simply</div>
+  <p>"Ten weeks. The first two are unglamorous — reading the phone code and fixing the logging — and
+  that's on purpose. The risky question is whether the phone actually sends what I need, and I want to
+  find that out in week one, not week seven. Week three is the checkpoint. Then data and baselines,
+  then the model, then real recordings, then writing."</p></div>
+  <div class="block tech"><div class="lbl">Technical</div>
+  <p>Weeks 1–3 are the dependency-critical path: message schema, frame conventions, timestamps and
+  tracking state, clock map, phone→pelvis calibration, then the deterministic Stage 1 measurement.
+  Weeks 4–8 are self-contained and need only the repository and a laptop. Weeks 9–10 depend on hardware
+  and optical access, which are the items most likely to slip.</p></div>
+</div>
+
+<!-- 15 -->
+<div class="slide">
+  <div class="hdr"><span class="badge">15</span><span class="title">The honest risk</span><span class="time">~45 s</span></div>
+  <div class="block simple"><div class="lbl">Say it simply</div>
+  <p>"The honest risk is that the geometry fix alone solves most of it and there isn't much left for the
+  model to do. I'd rather say that now than discover it in week nine. And it wouldn't be a failed
+  project — it would be a result: it'd show the problem was a missing coordinate transform, not
+  something that needed a neural network. The checkpoint is early enough that I can pivot to a related
+  problem on the same data."</p></div>
+  <div class="block tech"><div class="lbl">Technical</div>
+  <p>Pivot targets on the same pipeline: packet-loss reconstruction on the SO(3) manifold (labels free
+  by masking, gap distributions already measured), or tracking-quality classification from the stream
+  and the instrumentation counters. Both are self-contained and need no additional hardware.</p></div>
+  <div class="block ask"><div class="lbl">Expect</div>
+  <p><b>"Isn't that a lot of risk for a graded project?"</b> — That's why the gate is week 3 and why
+  the pivot targets are already scoped. Either path ends in a complete, evaluated result.</p></div>
+</div>
+
+<!-- 16 -->
+<div class="slide">
+  <div class="hdr"><span class="badge">16</span><span class="title">What this contributes</span><span class="time">~45 s</span></div>
+  <div class="block simple"><div class="lbl">Say it simply</div>
+  <p>"Four things. A working way to anchor this kind of suit to a phone's camera tracking. A small model
+  that fixes what's left once that anchor exists. A test setup that can actually tell the different
+  causes apart, which we can't do today. And evidence about when a plain geometric fix is enough versus
+  when learning the body's structure genuinely adds something. That last one is useful to anyone
+  building a cheap motion-capture suit."</p></div>
+  <div class="block tech"><div class="lbl">Technical</div>
+  <p>The benchmark separates initialisation offset, common yaw drift, differential per-segment drift,
+  tracking reset, mount slip and timing error — currently confounded. The generalisable claim is the
+  deterministic/learned boundary for magnetometer-free suits with a body-worn visual anchor.</p></div>
+</div>
+
+<!-- 17 -->
+<div class="slide">
+  <div class="hdr"><span class="badge">17</span><span class="title">Questions</span><span class="time">—</span></div>
+  <div class="block simple"><div class="lbl">Say it simply</div>
+  <p>"Happy to take questions."</p></div>
+  <div class="block ask"><div class="lbl">Have ready</div>
+  <p><b>"How is this different from existing IMU pose papers?"</b> — Those infer pose from <i>few</i>
+  sensors. I have plenty of sensors; I'm resolving one unobservable direction across all of them.<br>
+  <b>"Why not just use the phone's compass?"</b> — Worth checking. If the app requests heading-aligned
+  tracking it <i>is</i> using the magnetometer, which would contradict the premise. That's a week-one
+  question in the proposal.<br>
+  <b>"How much data do you need?"</b> — Training is on a large public dataset with simulated sensors,
+  so that's not the constraint. The constraint is real recordings with an optical reference.<br>
+  <b>"Will it run in real time?"</b> — The model is small enough to, but the graded version is offline
+  because a bidirectional model over a short window is more accurate. Real time is a stretch goal.</p></div>
+</div>
+
+</body>
+</html>
