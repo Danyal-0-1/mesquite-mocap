@@ -9,10 +9,10 @@ claim about fleet behaviour, timing on silicon, power, range or accuracy remains
 
 ## 1. Release-candidate freeze
 
-Branch `a1-implementation` @ `3718fa6`, base `4487d56`.
+Branch `a1-implementation` @ `e055cf8` + one follow-up (N3 stamp placement), base `4487d56`.
 
 ```
-2a250598ebf7e27e7404a56d36d835ecdd4af97021280960308e28b7a39d22d5  Device code/Pod_Watch_Binary/Pod_Watch_Binary.ino
+622573ab4f908cd5a5e52794aaeebaba41a44345686f56923f7ea26eed0e8309  Device code/Pod_Watch_Binary/Pod_Watch_Binary.ino
 ed21f9fb31d2d9e944ef8ca5063a21c563224fe047c3fe9177648e06907ed920  Device code/Pod_Watch_Binary/mesq_pod_core.h
 5f4ac65c2100da5ce1db31dac50663d1b893c4e9dca07fc04056709baf4e73f2  Device code/Pod_Watch_Binary/mesq_packet.h
 a154af5bf0b1f564a5dccf85148c70e4e09d9d8eb49f11e241b138283153105e  Device code/Dongle_Binary/Dongle_Binary.ino

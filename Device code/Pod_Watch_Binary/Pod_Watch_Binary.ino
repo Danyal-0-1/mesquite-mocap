@@ -1006,14 +1006,17 @@ void TaskReadIMU(void *pvParameters) {
           // instant -- no interrupt edge is wired, so the true instant is
           // unverified and must not be claimed (master prompt rule 16).
           g_sampleCh.publish((float)w, (float)x, (float)y, (float)z, millis());
+#if MESQ_INSTR
+          // N3 marks when a sample was PUBLISHED, so sample-to-send age is
+          // measured against the pose actually transmitted. Stamping it for a
+          // rejected sample too would report an age for data that never left.
+          mesq_lastSampleUs = esp_timer_get_time();
+#endif
         }
 
         // NODE-06: Phase 1 computed roll/pitch/yaw here with two atan2 and
         // one asin on every sample. Nothing read them -- they were local
         // variables, never stored, never transmitted. Removed.
-#if MESQ_INSTR
-        mesq_lastSampleUs = esp_timer_get_time();   // N3
-#endif
       }
     }
 
