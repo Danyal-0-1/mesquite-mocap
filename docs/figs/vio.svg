@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 340" font-family="Helvetica,Arial,sans-serif">
+  <!-- LEFT: camera tracks fixed points in the room -->
+  <rect x="8" y="8" width="474" height="250" fill="#fff" stroke="#c9c9c9" stroke-width="2" rx="12"/>
+  <text x="34" y="46" font-size="23" font-weight="700" fill="#16181d">The camera watches fixed points</text>
+
+  <!-- phone -->
+  <rect x="52" y="120" width="40" height="72" rx="7" fill="#fff" stroke="#b07d28" stroke-width="3.5"/>
+  <circle cx="72" cy="140" r="6" fill="#b07d28"/>
+  <text x="34" y="216" font-size="17" fill="#b07d28">phone</text>
+
+  <!-- rays to features -->
+  <g stroke="#b07d28" stroke-width="1.6" stroke-dasharray="5 4" opacity="0.75">
+    <line x1="94" y1="150" x2="300" y2="74"/>
+    <line x1="94" y1="152" x2="340" y2="118"/>
+    <line x1="94" y1="156" x2="318" y2="170"/>
+    <line x1="94" y1="160" x2="356" y2="206"/>
+    <line x1="94" y1="164" x2="286" y2="224"/>
+  </g>
+
+  <!-- room features -->
+  <g>
+    <rect x="270" y="58" width="130" height="92" fill="none" stroke="#9aa5b1" stroke-width="2.5"/>
+    <line x1="270" y1="190" x2="420" y2="190" stroke="#9aa5b1" stroke-width="2.5"/>
+    <line x1="292" y1="190" x2="292" y2="232" stroke="#9aa5b1" stroke-width="2.5"/>
+    <line x1="398" y1="190" x2="398" y2="232" stroke="#9aa5b1" stroke-width="2.5"/>
+  </g>
+  <g fill="#1f7a3d">
+    <circle cx="300" cy="74" r="6"/><circle cx="340" cy="118" r="6"/>
+    <circle cx="318" cy="170" r="6"/><circle cx="356" cy="206" r="6"/>
+    <circle cx="286" cy="224" r="6"/>
+  </g>
+  <text x="34" y="242" font-size="17" fill="#6b737c">the room does not rotate &#8212; so it is an absolute reference</text>
+
+  <!-- RIGHT: drift comparison -->
+  <rect x="518" y="8" width="474" height="250" fill="#fff" stroke="#c9c9c9" stroke-width="2" rx="12"/>
+  <text x="544" y="46" font-size="23" font-weight="700" fill="#16181d">Which is why it does not drift</text>
+
+  <line x1="572" y1="80" x2="572" y2="206" stroke="#c9c9c9" stroke-width="2"/>
+  <line x1="572" y1="206" x2="956" y2="206" stroke="#c9c9c9" stroke-width="2"/>
+  <text x="600" y="232" font-size="16" fill="#8a929c">time &#8594;</text>
+  <text x="552" y="198" font-size="15" fill="#8a929c" transform="rotate(-90 552 198)">heading error</text>
+
+  <!-- gyro-only: accumulating drift -->
+  <path d="M576,200 Q790,196 950,96" fill="none" stroke="#b3261e" stroke-width="4" stroke-dasharray="9 6"/>
+  <text x="700" y="82" font-size="17" fill="#b3261e" font-weight="600">gyroscope alone</text>
+
+  <!-- camera-corrected: bounded -->
+  <path d="M576,200 L620,194 L664,202 L708,193 L752,201 L796,194 L830,199"
+        fill="none" stroke="#1f7a3d" stroke-width="4"/>
+  <text x="842" y="205" font-size="17" fill="#1f7a3d" font-weight="600">camera-corrected</text>
+
+  <!-- bottom bar -->
+  <rect x="8" y="278" width="984" height="54" fill="#fff" stroke="#c9c9c9" stroke-width="2" rx="12"/>
+  <text x="34" y="312" font-size="21" fill="#16181d">The gyroscope is fast but drifts. The camera is slower but stays locked to the room. ARKit fuses both.</text>
+</svg>

@@ -41,7 +41,7 @@
 <body>
 
 <h1>Speaker notes</h1>
-<div class="sub">Root-Anchored Yaw Correction — project proposal · 17 slides · about 13 minutes</div>
+<div class="sub">Root-Anchored Yaw Correction — project proposal · 19 slides · about 15 minutes</div>
 
 <div class="intro">
   <p><b>How to use this.</b> The <span style="color:#1f7a3d;font-weight:700">green</span> block is what to
@@ -49,9 +49,9 @@
   <span style="color:#3d6fb4;font-weight:700">blue</span> block is the precise version: use it if your
   audience is technical, or hold it for questions. The
   <span style="color:#b07d28;font-weight:700">amber</span> block is a question you should expect.</p>
-  <p><b>If you are short on time</b>, the four slides that carry the argument are
-  <b>3 (the problem)</b>, <b>6 (the finding)</b>, <b>8 (why both)</b> and <b>9 (the method)</b>.
-  Everything else can be compressed.</p>
+  <p><b>If you are short on time</b>, the five slides that carry the argument are
+  <b>3 (the problem)</b>, <b>6 (the finding)</b>, <b>7 (how the phone does it)</b>,
+  <b>10 (why both)</b> and <b>11 (the method)</b>. Everything else can be compressed.</p>
   <p><b>The one sentence to land:</b> the phone already knows which way the body is facing, the system
   currently ignores it, and once you fix that the remaining error is a genuine learning problem.</p>
 </div>
@@ -155,7 +155,58 @@
 
 <!-- 7 -->
 <div class="slide">
-  <div class="hdr"><span class="badge">7</span><span class="title">What could fix it</span><span class="time">~55 s</span></div>
+  <div class="hdr"><span class="badge">7</span><span class="title">How the phone knows which way it faces</span><span class="time">~75 s</span></div>
+  <div class="block simple"><div class="lbl">Say it simply</div>
+  <p>"So how does the phone manage what fifteen sensors can't? It cheats — it looks at the room. The
+  camera picks out fixed points: the corner of a window, the edge of a table, texture on the floor. As
+  you turn, those points sweep across the image in a very predictable way, and from that the phone works
+  out how much it turned. The room isn't going anywhere, so it's something absolute to measure against."
+  <span class="pause">pause</span> "Then it combines that with its own gyroscope. The gyroscope is fast
+  but drifts. The camera is slower but stays locked to the room. Together you get something that's both
+  quick <i>and</i> doesn't wander. That's the whole trick — and it's exactly what our body sensors don't
+  have, because they can't see anything."</p></div>
+  <div class="block tech"><div class="lbl">Technical</div>
+  <p>ARKit world tracking is visual–inertial odometry. Feature points are extracted and tracked across
+  camera frames; the IMU is integrated at high rate between them. The gyro supplies low-latency,
+  high-rate orientation and accumulates bias; the visual observations of static world features bound
+  that error, because re-observing the same feature constrains absolute rotation. Note the asymmetry in
+  our favour — VIO rotation is far better constrained than VIO translation, and rotation is exactly
+  what we want from it.</p></div>
+  <div class="block ask"><div class="lbl">Expect</div>
+  <p><b>"Why can't the body sensors do the same thing?"</b> — They have no camera. They only have a
+  gyro and an accelerometer, so there is nothing to correct the drift against. That's the red line on
+  the chart.</p></div>
+</div>
+
+<!-- 8 -->
+<div class="slide">
+  <div class="hdr"><span class="badge">8</span><span class="title">What that buys us — and what it doesn't</span><span class="time">~65 s</span></div>
+  <div class="block simple"><div class="lbl">Say it simply</div>
+  <p>"Three things we get: a heading that stays put, no compass so no metal problem, and hardware
+  already strapped to the person. But I want to be clear about the limits. It doesn't give us north —
+  zero is just wherever you pressed start. That's actually fine for us, because we only need it to
+  <i>stay still</i>, not to point anywhere in particular. It isn't always reliable: a blank wall, dim
+  light, a covered camera, or a fast turn and it degrades, or it jumps when it re-finds itself. And it
+  only sees the hip — it tells us nothing about the other fourteen sensors. So the phone has to report
+  <i>when it's struggling</i>, and the model has to know when not to trust it."</p></div>
+  <div class="block tech"><div class="lbl">Technical</div>
+  <p>With <code>.gravity</code> world alignment, Y is along gravity and the horizontal axes are fixed by
+  the device pose at session start — so heading is session-relative with an arbitrary origin, but stable
+  thereafter. That is sufficient: we need a consistent reference, not a geographic one. Drift is
+  <i>bounded</i>, not zero, and relocalisation produces discrete jumps.
+  <code>ARCamera.trackingState</code> exposes <code>.normal</code>, <code>.limited(reason)</code> and
+  <code>.notAvailable</code>, with reasons including <code>.initializing</code>,
+  <code>.excessiveMotion</code>, <code>.insufficientFeatures</code> and <code>.relocalizing</code>.
+  Getting that state onto the wire is week 2, and it feeds the Stage 3 uncertainty gate directly.</p></div>
+  <div class="block ask"><div class="lbl">Expect</div>
+  <p><b>"Doesn't it use the compass anyway?"</b> — Only if the app asks for
+  <code>.gravityAndHeading</code>, which aligns to true north via the magnetometer. If it does, that
+  contradicts the premise of the whole project. It's an explicit week-one check in the proposal —
+  <i>say this, it shows you've thought about your own assumption.</i></p></div>
+</div>
+<!-- 7 -->
+<div class="slide">
+  <div class="hdr"><span class="badge">9</span><span class="title">What could fix it</span><span class="time">~55 s</span></div>
   <div class="block simple"><div class="lbl">Say it simply</div>
   <p>"I looked at the obvious options. Turn the compass on — no, that's the thing we're avoiding. A
   better filter on each sensor — helps a bit, but it can't invent information that isn't there. Methods
@@ -171,7 +222,7 @@
 
 <!-- 8 -->
 <div class="slide">
-  <div class="hdr"><span class="badge">8</span><span class="title">Why both, in that order</span><span class="time">~60 s — the argument</span></div>
+  <div class="hdr"><span class="badge">10</span><span class="title">Why both, in that order</span><span class="time">~60 s — the argument</span></div>
   <div class="block simple"><div class="lbl">Say it simply</div>
   <p>"Here's the key point. The phone is on the hip, so it can tell you which way the <i>hips</i> are
   facing. It has nothing at all to say about whether the left forearm has drifted. So the phone fixes
@@ -189,7 +240,7 @@
 
 <!-- 9 -->
 <div class="slide">
-  <div class="hdr"><span class="badge">9</span><span class="title">The method</span><span class="time">~75 s</span></div>
+  <div class="hdr"><span class="badge">11</span><span class="title">The method</span><span class="time">~75 s</span></div>
   <div class="block simple"><div class="lbl">Say it simply</div>
   <p>"Three stages. First, use the phone to set the hips — no machine learning, just geometry. Second, a
   small model estimates the leftover error for the other fourteen sensors. Third — and this matters —
@@ -209,7 +260,7 @@
 
 <!-- 10 -->
 <div class="slide">
-  <div class="hdr"><span class="badge">10</span><span class="title">Stage 1 — anchor the root</span><span class="time">~55 s</span></div>
+  <div class="hdr"><span class="badge">12</span><span class="title">Stage 1 — anchor the root</span><span class="time">~55 s</span></div>
   <div class="block simple"><div class="lbl">Say it simply</div>
   <p>"Mechanically it's simple: work out the rotation between where the phone says the hips point and
   where the suit thinks they point, then apply that same rotation to everything. Two things have to be
@@ -225,7 +276,7 @@
 
 <!-- 11 -->
 <div class="slide">
-  <div class="hdr"><span class="badge">11</span><span class="title">Stage 2 — the model</span><span class="time">~70 s</span></div>
+  <div class="hdr"><span class="badge">13</span><span class="title">Stage 2 — the model</span><span class="time">~70 s</span></div>
   <div class="block simple"><div class="lbl">Say it simply</div>
   <p>"The model is deliberately small — about two hundred thousand parameters, which is tiny by modern
   standards. Two ideas. First, a sensor only exchanges information with its <i>neighbours</i> on the
@@ -249,7 +300,7 @@
 
 <!-- 12 -->
 <div class="slide">
-  <div class="hdr"><span class="badge">12</span><span class="title">On reinforcement learning</span><span class="time">~60 s</span></div>
+  <div class="hdr"><span class="badge">14</span><span class="title">On reinforcement learning</span><span class="time">~60 s</span></div>
   <div class="block simple"><div class="lbl">Say it simply</div>
   <p>"I was asked about using reinforcement learning, so let me be straight about it. For the main job
   it's the wrong tool — when you already know the right answer from your training data, you should just
@@ -271,7 +322,7 @@
 
 <!-- 13 -->
 <div class="slide">
-  <div class="hdr"><span class="badge">13</span><span class="title">How we'll know it worked</span><span class="time">~55 s</span></div>
+  <div class="hdr"><span class="badge">15</span><span class="title">How we'll know it worked</span><span class="time">~55 s</span></div>
   <div class="block simple"><div class="lbl">Say it simply</div>
   <p>"I measure heading error in degrees per body part, and also where the joints end up in space,
   because a small error at the hips becomes a big error at the hand. Three rules I'm setting in advance:
@@ -288,7 +339,7 @@
 
 <!-- 14 -->
 <div class="slide">
-  <div class="hdr"><span class="badge">14</span><span class="title">Ten weeks</span><span class="time">~50 s</span></div>
+  <div class="hdr"><span class="badge">16</span><span class="title">Ten weeks</span><span class="time">~50 s</span></div>
   <div class="block simple"><div class="lbl">Say it simply</div>
   <p>"Ten weeks. The first two are unglamorous — reading the phone code and fixing the logging — and
   that's on purpose. The risky question is whether the phone actually sends what I need, and I want to
@@ -303,7 +354,7 @@
 
 <!-- 15 -->
 <div class="slide">
-  <div class="hdr"><span class="badge">15</span><span class="title">The honest risk</span><span class="time">~45 s</span></div>
+  <div class="hdr"><span class="badge">17</span><span class="title">The honest risk</span><span class="time">~45 s</span></div>
   <div class="block simple"><div class="lbl">Say it simply</div>
   <p>"The honest risk is that the geometry fix alone solves most of it and there isn't much left for the
   model to do. I'd rather say that now than discover it in week nine. And it wouldn't be a failed
@@ -321,7 +372,7 @@
 
 <!-- 16 -->
 <div class="slide">
-  <div class="hdr"><span class="badge">16</span><span class="title">What this contributes</span><span class="time">~45 s</span></div>
+  <div class="hdr"><span class="badge">18</span><span class="title">What this contributes</span><span class="time">~45 s</span></div>
   <div class="block simple"><div class="lbl">Say it simply</div>
   <p>"Four things. A working way to anchor this kind of suit to a phone's camera tracking. A small model
   that fixes what's left once that anchor exists. A test setup that can actually tell the different
@@ -336,7 +387,7 @@
 
 <!-- 17 -->
 <div class="slide">
-  <div class="hdr"><span class="badge">17</span><span class="title">Questions</span><span class="time">—</span></div>
+  <div class="hdr"><span class="badge">19</span><span class="title">Questions</span><span class="time">—</span></div>
   <div class="block simple"><div class="lbl">Say it simply</div>
   <p>"Happy to take questions."</p></div>
   <div class="block ask"><div class="lbl">Have ready</div>

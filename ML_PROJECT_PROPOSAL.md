@@ -94,6 +94,49 @@ reference.** That is a real, cheap, deterministic fix — and it has to be done 
 any model is trained, or the model would be paid to fix something a coordinate transform already
 solves.
 
+### 2.4 How the phone gets a heading at all
+
+Worth stating explicitly, because it is the assumption the whole project rests on.
+
+![How ARKit recovers heading](docs/figs/vio.svg)
+
+ARKit's world tracking is **visual–inertial odometry**. The camera extracts and tracks feature points
+across frames — the corner of a window, the edge of a table, texture on the floor. Those features are
+static in the world, so re-observing them constrains the device's absolute rotation. Between camera
+frames the IMU is integrated at high rate.
+
+The two are complementary in exactly the way we need:
+
+| | Fast | Drifts |
+|---|---|---|
+| Gyroscope | yes | **yes** — nothing corrects it |
+| Camera | no | **no** — the room does not move |
+
+**That is the entire difference between the phone and the 15 body sensors.** The body sensors have the
+same gyroscope problem and no camera, so nothing bounds their heading error. The phone has something
+to measure against.
+
+Three qualifications that shape the design:
+
+- **It is not north.** With `.gravity` world alignment, Y is along gravity and the horizontal axes are
+  fixed by the device pose at session start. Heading is **session-relative with an arbitrary origin**,
+  but stable thereafter — which is sufficient, because we need a *consistent* reference, not a
+  geographic one. (If the app instead requests `.gravityAndHeading`, it aligns to true north **via the
+  magnetometer**, which would contradict this project's premise. §10 makes this a week-one check.)
+- **Drift is bounded, not zero,** and relocalisation produces *discrete jumps* rather than smooth error.
+- **Tracking degrades predictably** — blank walls, dim light, a covered camera, fast rotation.
+  `ARCamera.trackingState` reports `.normal`, `.limited(reason)` or `.notAvailable`, with reasons
+  including `.initializing`, `.excessiveMotion`, `.insufficientFeatures` and `.relocalizing` [19].
+
+The third point is why tracking state must be on the wire (§4 Stage 0) and why the model predicts its
+own confidence (§4 Stage 3): the anchor is good, but it is not always available, and the system has to
+know the difference.
+
+One convenient asymmetry: **VIO constrains rotation far better than translation**, and rotation is
+exactly what we are taking from it.
+
+---
+
 ---
 
 ## 3. Possible solutions, and what I picked

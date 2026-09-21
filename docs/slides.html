@@ -196,6 +196,96 @@
   <div class="num">6</div>
 </div>
 
+<!-- 7 HOW THE PHONE KNOWS -->
+<div class="slide">
+  <h2>How does the phone know which way it faces?</h2>
+  <div class="figwrap"><svg viewBox="0 0 1000 340" preserveAspectRatio="xMidYMid meet" font-family="Helvetica,Arial,sans-serif">
+  <!-- LEFT: camera tracks fixed points in the room -->
+  <rect x="8" y="8" width="474" height="250" fill="#fff" stroke="#c9c9c9" stroke-width="2" rx="12"/>
+  <text x="34" y="46" font-size="23" font-weight="700" fill="#16181d">The camera watches fixed points</text>
+
+  <!-- phone -->
+  <rect x="52" y="120" width="40" height="72" rx="7" fill="#fff" stroke="#b07d28" stroke-width="3.5"/>
+  <circle cx="72" cy="140" r="6" fill="#b07d28"/>
+  <text x="34" y="216" font-size="17" fill="#b07d28">phone</text>
+
+  <!-- rays to features -->
+  <g stroke="#b07d28" stroke-width="1.6" stroke-dasharray="5 4" opacity="0.75">
+    <line x1="94" y1="150" x2="300" y2="74"/>
+    <line x1="94" y1="152" x2="340" y2="118"/>
+    <line x1="94" y1="156" x2="318" y2="170"/>
+    <line x1="94" y1="160" x2="356" y2="206"/>
+    <line x1="94" y1="164" x2="286" y2="224"/>
+  </g>
+
+  <!-- room features -->
+  <g>
+    <rect x="270" y="58" width="130" height="92" fill="none" stroke="#9aa5b1" stroke-width="2.5"/>
+    <line x1="270" y1="190" x2="420" y2="190" stroke="#9aa5b1" stroke-width="2.5"/>
+    <line x1="292" y1="190" x2="292" y2="232" stroke="#9aa5b1" stroke-width="2.5"/>
+    <line x1="398" y1="190" x2="398" y2="232" stroke="#9aa5b1" stroke-width="2.5"/>
+  </g>
+  <g fill="#1f7a3d">
+    <circle cx="300" cy="74" r="6"/><circle cx="340" cy="118" r="6"/>
+    <circle cx="318" cy="170" r="6"/><circle cx="356" cy="206" r="6"/>
+    <circle cx="286" cy="224" r="6"/>
+  </g>
+  <text x="34" y="242" font-size="17" fill="#6b737c">the room does not rotate &#8212; so it is an absolute reference</text>
+
+  <!-- RIGHT: drift comparison -->
+  <rect x="518" y="8" width="474" height="250" fill="#fff" stroke="#c9c9c9" stroke-width="2" rx="12"/>
+  <text x="544" y="46" font-size="23" font-weight="700" fill="#16181d">Which is why it does not drift</text>
+
+  <line x1="572" y1="80" x2="572" y2="206" stroke="#c9c9c9" stroke-width="2"/>
+  <line x1="572" y1="206" x2="956" y2="206" stroke="#c9c9c9" stroke-width="2"/>
+  <text x="600" y="232" font-size="16" fill="#8a929c">time &#8594;</text>
+  <text x="552" y="198" font-size="15" fill="#8a929c" transform="rotate(-90 552 198)">heading error</text>
+
+  <!-- gyro-only: accumulating drift -->
+  <path d="M576,200 Q790,196 950,96" fill="none" stroke="#b3261e" stroke-width="4" stroke-dasharray="9 6"/>
+  <text x="700" y="82" font-size="17" fill="#b3261e" font-weight="600">gyroscope alone</text>
+
+  <!-- camera-corrected: bounded -->
+  <path d="M576,200 L620,194 L664,202 L708,193 L752,201 L796,194 L830,199"
+        fill="none" stroke="#1f7a3d" stroke-width="4"/>
+  <text x="842" y="205" font-size="17" fill="#1f7a3d" font-weight="600">camera-corrected</text>
+
+  <!-- bottom bar -->
+  <rect x="8" y="278" width="984" height="54" fill="#fff" stroke="#c9c9c9" stroke-width="2" rx="12"/>
+  <text x="34" y="312" font-size="21" fill="#16181d">The gyroscope is fast but drifts. The camera is slower but stays locked to the room. ARKit fuses both.</text>
+</svg></div>
+  <div class="foot">ARKit world tracking — visual–inertial odometry</div>
+  <div class="num">7</div>
+</div>
+
+<!-- 8 WHAT IT GIVES / DOESN'T -->
+<div class="slide">
+  <h2>What that buys us — and what it doesn't</h2>
+  <div class="cols">
+    <div class="col card" style="border-color:#bcd8bc;">
+      <h3 style="color:#1f7a3d;">It gives us</h3>
+      <ul style="font-size:15pt; margin-top:0.08in;">
+        <li class="good">A heading that <b>stays put</b> — corrected against the room, so it doesn't creep</li>
+        <li class="good">No compass, so <b>no metal problem</b></li>
+        <li class="good">Hardware we're <b>already wearing</b></li>
+      </ul>
+    </div>
+    <div class="col card" style="border-color:#f0c7c2;">
+      <h3 style="color:#b3261e;">It doesn't give us</h3>
+      <ul style="font-size:15pt; margin-top:0.08in;">
+        <li class="bad"><b>North.</b> Zero is wherever you pressed start — fine for us, we only need it to stay still</li>
+        <li class="bad"><b>Reliability.</b> A blank wall, dim light, a covered camera, or a fast turn and it degrades or jumps</li>
+        <li class="bad"><b>The other 14 sensors.</b> It only sees the hip</li>
+      </ul>
+    </div>
+  </div>
+  <p style="margin-top:0.18in; font-size:15pt; background:#fff3cd; padding:0.14in 0.2in; border-radius:6px;">
+    So the phone must tell us <b>when it is struggling</b> — that is why tracking state has to be on
+    the wire, and why the model predicts its own confidence.
+  </p>
+  <div class="num">8</div>
+</div>
+
 <!-- 7 OPTIONS -->
 <div class="slide">
   <h2>What could fix it</h2>
@@ -208,7 +298,7 @@
     <tr class="pick"><td>Use the phone as a root anchor</td><td>PICKED — the hardware is already worn</td></tr>
     <tr class="pick"><td>Learn the leftover per-segment error</td><td>PICKED — this is the contribution</td></tr>
   </table>
-  <div class="num">7</div>
+  <div class="num">9</div>
 </div>
 
 <!-- 8 WHY THIS SPLIT -->
@@ -223,7 +313,7 @@
     That leftover is recoverable only from <b>body structure and motion</b>.<br>
     <em class="hl">That is the learning problem.</em>
   </p>
-  <div class="num">8</div>
+  <div class="num">10</div>
 </div>
 
 <!-- 9 METHOD -->
@@ -245,7 +335,7 @@
     <b>Week 3 is a go/no-go gate.</b> If Stage 1 alone fixes most of it, the honest answer is
     "this was a missing coordinate transform, not a missing model" — and that is a result worth publishing.
   </p>
-  <div class="num">9</div>
+  <div class="num">11</div>
 </div>
 
 <!-- 10 STAGE 1 -->
@@ -262,7 +352,7 @@
     <li>Needs the <b>camera-to-hip offset</b>, or the position is wrong every time the pelvis turns</li>
     <li>We test <b>full rotation</b> vs <b>heading-only</b> and let the data choose</li>
   </ul>
-  <div class="num">10</div>
+  <div class="num">12</div>
 </div>
 
 <!-- 11 MODEL -->
@@ -290,7 +380,7 @@
     Trained on <b>AMASS</b> motion data with simulated sensors, so the true answer is known exactly.
     Corruption (drift, dropouts, phone outages, mount slip) is modelled from <b>real measured</b> distributions.
   </p>
-  <div class="num">11</div>
+  <div class="num">13</div>
 </div>
 
 <!-- 12 RL -->
@@ -310,7 +400,7 @@
       is a genuine sequential decision. Small, and a fair stretch goal.</p>
     </div>
   </div>
-  <div class="num">12</div>
+  <div class="num">14</div>
 </div>
 
 <!-- 13 EVALUATION -->
@@ -335,7 +425,7 @@
       </ul>
     </div>
   </div>
-  <div class="num">13</div>
+  <div class="num">15</div>
 </div>
 
 <!-- 14 TIMELINE -->
@@ -355,7 +445,7 @@
     The risky weeks are <b>first</b>, on purpose. If the phone doesn't send what we need,
     I want to know in week 1 — not week 7.
   </p>
-  <div class="num">14</div>
+  <div class="num">16</div>
 </div>
 
 <!-- 15 RISK -->
@@ -370,7 +460,7 @@
     The gate is in <b>week 3</b> so there is time to pivot — to packet-loss reconstruction
     or tracking-quality prediction, on the same data.
   </p>
-  <div class="num">15</div>
+  <div class="num">17</div>
 </div>
 
 <!-- 16 CONTRIBUTION -->
@@ -385,14 +475,14 @@
   <p class="lead" style="margin-top:0.3in;">
     <em class="hl">The project is useful whichever way the hypothesis falls.</em>
   </p>
-  <div class="num">16</div>
+  <div class="num">18</div>
 </div>
 
 <!-- 17 END -->
 <div class="slide center">
   <h1 style="font-size:40pt;">Thank you</h1>
   <p class="lead" style="margin-top:0.3in; color:#4a525c;">Questions</p>
-  <div class="num">17</div>
+  <div class="num">19</div>
 </div>
 
 </body>
