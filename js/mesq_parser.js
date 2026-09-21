@@ -333,8 +333,45 @@
     };
   }
 
+  /* -----------------------------------------------------------------------
+     HOST -> HUB COMMAND  -- HUB-03
+
+     PROTOCOL: [0xAA][0x55][0xFC][cmd][len][payload...][xor over cmd,len,payload]
+     Mirrors mesqCmdBuild() in Device code/Dongle_Binary/mesq_hub_core.h.
+
+     WHY this function must exist: the hub used to reset all 17 pods on ANY
+     inbound byte, so the browser "rebooted" the fleet by writing the literal
+     text "reboot" -- the word was irrelevant, any byte would have done. Now
+     that the hub only acts on a complete checksummed frame, the browser has
+     to build a real one.
+
+     COMPATIBILITY: a hub still running Phase 1 firmware resets on the first
+     byte of this frame, which is the same outcome the old call produced. So
+     this is safe to deploy to the browser BEFORE the hubs are reflashed.
+     ----------------------------------------------------------------------- */
+  var CMD_MARKER      = 0xFC;
+  var CMD_RESET_FLEET = 0x01;
+  var CMD_PING        = 0x02;
+
+  function encodeCommand(cmd, payload) {
+    payload = payload || [];
+    if (payload.length > 16) throw new Error('mesq: command payload limited to 16 bytes');
+    var out = new Uint8Array(6 + payload.length);
+    out[0] = SYNC0; out[1] = SYNC1; out[2] = CMD_MARKER;
+    out[3] = cmd & 0xFF;
+    out[4] = payload.length & 0xFF;
+    var x = out[3] ^ out[4];
+    for (var i = 0; i < payload.length; i++) { out[5 + i] = payload[i] & 0xFF; x ^= out[5 + i]; }
+    out[5 + payload.length] = x & 0xFF;
+    return out;
+  }
+
   return {
     POD_PACKET_LEN: POD_PACKET_LEN,
+    CMD_MARKER: CMD_MARKER,
+    CMD_RESET_FLEET: CMD_RESET_FLEET,
+    CMD_PING: CMD_PING,
+    encodeCommand: encodeCommand,
     SYNC0: SYNC0, SYNC1: SYNC1, STATUS_MARKER: STATUS_MARKER,
     MAX_JSON_LINE: MAX_JSON_LINE, MAX_RX_BUF: MAX_RX_BUF,
     JSON_STALL_MS: JSON_STALL_MS,

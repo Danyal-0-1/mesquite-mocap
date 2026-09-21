@@ -68,6 +68,7 @@ struct SerialClass {
   template <typename... A> void printf(const char *, A...) {}
   int  available() { return 0; }
   String readString() { return String(); }
+  int  read() { return -1; }
   size_t write(const uint8_t *, size_t) { return 0; }
 };
 static SerialClass Serial;

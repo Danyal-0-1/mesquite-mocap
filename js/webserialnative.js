@@ -264,14 +264,34 @@ function writeToPort(data) {
     return;
   }
   const writer = port.writable.getWriter();
-  const encoder = new TextEncoder();
-  writer.write(encoder.encode(data));
+  // Accept raw bytes as well as text: commands are binary frames now.
+  const bytes = (data instanceof Uint8Array) ? data : new TextEncoder().encode(data);
+  writer.write(bytes);
   writer.releaseLock();
 }
 
 window.sWrite = function (data) {
   writeToPort(data);
 }
+
+// HUB-03: send an explicitly framed, checksummed command.
+//
+// The old call was `window.sWrite("reboot")`. The word never mattered -- the
+// hub reset the fleet on ANY inbound byte, which is why line noise and stray
+// terminal traffic could drop the suit mid-capture. The hub now requires a
+// complete frame, so the browser builds one.
+//
+// COMPATIBILITY: against a hub still running Phase 1 firmware the first byte
+// of this frame triggers the old reset, giving the same result. The browser
+// can therefore be updated before the hubs are.
+window.mesqSendCommand = function (cmd, payload) {
+  writeToPort(MesqParser.encodeCommand(cmd, payload));
+};
+
+// Kept as a named helper so call sites read as intent, not as a magic string.
+window.mesqRebootFleet = function () {
+  window.mesqSendCommand(MesqParser.CMD_RESET_FLEET);
+};
 
 navigator.serial.addEventListener("connect", (e) => {
   console.log("A serial port has been connected to the system: ", e);

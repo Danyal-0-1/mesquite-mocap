@@ -33,6 +33,12 @@
 #include "ESPAsyncWebServer.h"
 #include "AsyncTCP.h"
 
+// Phase 3 hub core: command framer, single-owner USB queue, per-node
+// integrity counters. Also compiles on a desktop with -DMESQ_HOST_TEST so
+// tools/firmware_tests.cpp exercises the queue under two real producer
+// threads and the framer against 100k random bytes.
+#include "mesq_hub_core.h"
+
 // ============================================================
 //  RADIO CONFIG -- MUST MATCH THE POD FIRMWARE
 //  ESP-NOW only delivers packets when sender and receiver are on the same
@@ -105,9 +111,55 @@
 #define MESQ_INSTR 0
 #endif
 
+#define MESQ_STATUS_MARKER 0xFE
+
+// ============================================================
+//  HUB SHARED STATE
+//  Declared here, above hubEmitStatus(), because that function pushes into
+//  g_usb. Order matters in a single translation unit.
+// ============================================================
+
+// HUB-02: the single owner of the USB stream. Every producer pushes a whole
+// record here; usbWriterTask is the only thing that calls Serial.write().
+MesqUsbQueue  g_usb;
+
+// HUB-05 / SYNC-03: per-node integrity, ALWAYS ON (not behind MESQ_INSTR).
+// Phase 1's finding was that dropped packets are silent -- a node losing half
+// its traffic looked exactly like a healthy one. Two framed status records a
+// second is a negligible cost for making that visible during every capture.
+MesqNodeStats g_nodeStats[NUM_PODS];
+
+// HUB-03: the host -> hub command parser.
+MesqCmdParser g_cmdParser;
+
+// HUB-07: peer registration outcomes, so a failure is not silent.
+uint32_t g_peerAddFail = 0;
+
+
+// Emit one framed status record. ALWAYS AVAILABLE, not instrumentation-only.
+//
+// PROTOCOL: [0xAA][0x55][0xFE][len][payload...]. 0xFE sits outside the bone
+// range 0..16 and outside the 0xFF/0xFC control markers, so it cannot be
+// confused with a pose frame. js/mesq_parser.js decodes it explicitly.
+//
+// WHY this exists at all: the hub has things to tell the operator (a pod
+// went quiet, a peer add failed, the USB queue is overflowing) and the only
+// cable available is the one already carrying binary poses. Writing that text
+// RAW into the stream is HUB-02 -- it splits a pose frame in half. Framing it
+// makes hub speech a first-class record instead of corruption.
+static void hubEmitStatus(const char *payload) {
+    size_t n = strlen(payload);
+    if (n > 250) n = 250;
+    uint8_t rec[255];
+    rec[0] = SYNC0; rec[1] = SYNC1; rec[2] = MESQ_STATUS_MARKER; rec[3] = (uint8_t)n;
+    memcpy(rec + 4, payload, n);
+    // Through the queue like everything else, so a status line can never
+    // interleave with a pose frame.
+    mesqUsbPush(&g_usb, rec, (uint8_t)(4 + n));
+}
+
 #if MESQ_INSTR
 #include <esp_timer.h>
-#define MESQ_STATUS_MARKER 0xFE
 
 static volatile uint32_t mesq_rx[NUM_PODS]      = {0};
 static volatile int32_t  mesq_rssiSum[NUM_PODS] = {0};
@@ -119,16 +171,10 @@ static volatile uint32_t mesq_wrN = 0, mesq_wrMax = 0; static volatile uint64_t 
 static volatile uint32_t mesq_resetCalls = 0;            // H1
 static volatile uint32_t mesq_peerFail = 0;              // H2
 
-// Emit one framed status line. Called ONLY from podTimeoutTask (1 Hz), never
-// from OnDataRecv -- adding writes to the receive callback to measure whether
-// that callback blocks would be circular (§4.4).
-static void mesq_emitStatus(const char *payload) {
-    size_t n = strlen(payload);
-    if (n > 250) n = 250;
-    uint8_t hdr[4] = { SYNC0, SYNC1, MESQ_STATUS_MARKER, (uint8_t)n };
-    Serial.write(hdr, 4);
-    Serial.write((const uint8_t *)payload, n);
-}
+// Phase 2's mesq_emitStatus() wrote straight to Serial from the timeout task,
+// which is a second writer on the stream -- the very HUB-02 collision it was
+// meant to measure. It now goes through the queue like everything else.
+#define mesq_emitStatus hubEmitStatus
 #endif
 
 const char* const POD_ABBR[NUM_PODS] = {
@@ -158,6 +204,7 @@ const char* const POD_ABBR[NUM_PODS] = {
 volatile bool          podConnected[NUM_PODS] = {false};
 volatile unsigned long podLastSeen[NUM_PODS]  = {0};
 portMUX_TYPE           stateMux = portMUX_INITIALIZER_UNLOCKED;
+
 
 // ============================================================
 //  DATA STRUCT + PEER MANAGEMENT
@@ -221,7 +268,45 @@ void podTimeoutTask(void *pvParameters) {
                 portENTER_CRITICAL(&stateMux);
                 podConnected[i] = false;
                 portEXIT_CRITICAL(&stateMux);
+                char b[64];
+                snprintf(b, sizeof(b), "POD %s (%d) LOST after %lu ms",
+                         POD_ABBR[i], i, (unsigned long)(now - last));
+                hubEmitStatus(b);
             }
+        }
+
+        // HUB-04: AsyncWebSocket keeps disconnected client objects until this
+        // is called. Phase 1 never called it, so a session that saw phones
+        // come and go leaked until the heap ran out -- which presents as the
+        // hub degrading over a long shoot rather than failing outright.
+        ws.cleanupClients();
+
+        // ---- 1 Hz integrity line, ALWAYS ON (HUB-05 / SYNC-03) ----
+        // Two framed records a second. This is the measurement Phase 1 called
+        // the cheapest path to knowing anything, and it is worthless if it
+        // only exists in a special build nobody flashes.
+        {
+            char buf[256];
+            int off = 0;
+            off += snprintf(buf + off, sizeof(buf) - off, "N rx=");
+            for (int i = 0; i < NUM_PODS && off < 150; i++)
+                off += snprintf(buf + off, sizeof(buf) - off, "%u,", (unsigned)g_nodeStats[i].received);
+            off += snprintf(buf + off, sizeof(buf) - off, " lost=");
+            for (int i = 0; i < NUM_PODS && off < 230; i++)
+                off += snprintf(buf + off, sizeof(buf) - off, "%u,", (unsigned)g_nodeStats[i].lost);
+            hubEmitStatus(buf);
+
+            off = 0;
+            off += snprintf(buf + off, sizeof(buf) - off,
+                            "Q depth=%u high=%u/%u dropped=%u pushed=%u popped=%u "
+                            "peerFail=%u cmd(ok=%u badsum=%u badlen=%u rst=%u) heap=%u ws=%u",
+                            (unsigned)g_usb.count, (unsigned)g_usb.highWater, MESQ_USB_QUEUE_LEN,
+                            (unsigned)g_usb.dropped, (unsigned)g_usb.pushed, (unsigned)g_usb.popped,
+                            (unsigned)g_peerAddFail,
+                            (unsigned)g_cmdParser.accepted, (unsigned)g_cmdParser.badChecksum,
+                            (unsigned)g_cmdParser.badLen, (unsigned)g_cmdParser.resets,
+                            (unsigned)ESP.getFreeHeap(), (unsigned)ws.count());
+            hubEmitStatus(buf);
         }
 #if MESQ_INSTR
         // ---- 1 Hz framed status. Emitted here, NOT from OnDataRecv. ----
@@ -301,15 +386,23 @@ void OnDataRecv(const uint8_t *mac_addr, const uint8_t *incomingData, int len) {
 
     uint8_t id = incomingData[2];
     if (id >= NUM_PODS) {
-        // Unknown bone id (or 0xFF control marker echoed back) -- drop.
+        // Unknown bone id (or a control marker echoed back) -- drop.
 #if MESQ_INSTR
         mesq_dropId++;
 #endif
         return;
     }
 
+    uint32_t nowMs = millis();
+
+    // HUB-05 / SYNC-03: gaps, duplicates, reordering, wraps and pod reboots,
+    // always on. UNITS: `count` is the pod's uint16 PACKET sequence; all the
+    // arithmetic in mesqStatsOnPacket is wrap-safe, and a pod restart is
+    // classified as a resync rather than ~65,000 lost packets.
+    uint16_t cnt = (uint16_t)(incomingData[12] | ((uint16_t)incomingData[13] << 8));
+    mesqStatsOnPacket(&g_nodeStats[id], cnt, nowMs);
+
 #if MESQ_INSTR
-    // I1 per-id count, I2 RSSI, H3 battery -- all cheap, no allocation.
     mesq_rx[id]++;
     mesq_batt[id] = incomingData[3];
   #if ESP_IDF_VERSION_MAJOR >= 5
@@ -321,39 +414,48 @@ void OnDataRecv(const uint8_t *mac_addr, const uint8_t *incomingData, int len) {
     int64_t _w0 = esp_timer_get_time();
 #endif
 
-    // Forward the raw 16 bytes to the host. The browser reassembles via the
-    // sync header and unpacks into the same {bone,x,y,z,w,batt,count,millis}
-    // shape the JSON path used to produce.
-    Serial.write(incomingData, POD_PACKET_LEN);
+    // HUB-02: COPY the borrowed bytes into owned storage and return. Phase 1
+    // called Serial.write() here, inside the ESP-NOW receive callback, while
+    // the AsyncTCP task could be writing a phone JSON line to the same
+    // stream. Phase 2 measured that collision: one interleave destroys BOTH
+    // records. It also means `incomingData` -- which the framework owns and
+    // may reuse the moment this returns -- is no longer referenced after the
+    // callback exits.
+    mesqUsbPush(&g_usb, incomingData, POD_PACKET_LEN);
+
 #if MESQ_INSTR
-    {   // I3: does Serial.write block inside the ESP-NOW receive callback?
+    {   // I3: the push is a bounded memcpy, so this should now be flat.
         uint32_t _d = (uint32_t)(esp_timer_get_time() - _w0);
         mesq_wrN++; mesq_wrSum += _d;
-        if (_d > mesq_wrMax) mesq_wrMax = _d;   // the MAX is what matters
+        if (_d > mesq_wrMax) mesq_wrMax = _d;
     }
 #endif
 
     // Track liveness for the local connection map.
     portENTER_CRITICAL(&stateMux);
     podConnected[id] = true;
-    podLastSeen[id]  = millis();
+    podLastSeen[id]  = nowMs;
     portEXIT_CRITICAL(&stateMux);
 
-    // Register the pod as a unicast peer the first time we see it. Required
-    // so sendReset() can hit it back over ESP-NOW. Pin channel explicitly --
-    // peer.channel = 0 (the old value) means "current channel of the local
-    // radio", which races with WiFi reassociation and was a silent source
-    // of dropped reboots when the radio drifted.
+    // HUB-07: Phase 1 set peerMacsInit[id] BEFORE calling esp_now_add_peer()
+    // and ignored the return value. If the add failed, the flag said the peer
+    // was registered, nothing ever retried, and sendReset() silently skipped
+    // that pod forever. Set the flag only on success, and count failures.
     if (!peerMacsInit[id]) {
-        peerMacsInit[id] = true;
-        memcpy(peerMacs[id].peer_addr, mac_addr, 6);
-        peerMacs[id].channel = ESPNOW_WIFI_CHANNEL;
-        peerMacs[id].encrypt = false;
+        esp_now_peer_info_t p;
+        memset(&p, 0, sizeof(p));
+        memcpy(p.peer_addr, mac_addr, 6);
+        p.channel = ESPNOW_WIFI_CHANNEL;   // never 0: "current channel" races
+        p.encrypt = false;
+        if (esp_now_add_peer(&p) == ESP_OK) {
+            peerMacs[id] = p;
+            peerMacsInit[id] = true;
+        } else {
+            g_peerAddFail++;
 #if MESQ_INSTR
-        if (esp_now_add_peer(&peerMacs[id]) != ESP_OK) mesq_peerFail++;   // H2
-#else
-        esp_now_add_peer(&peerMacs[id]);
+            mesq_peerFail++;               // H2
 #endif
+        }
     }
 }
 
@@ -365,21 +467,39 @@ void handleWebSocketMessage(void *arg, uint8_t *data, size_t len) {
     AwsFrameInfo *info = (AwsFrameInfo *)arg;
     if (info->final && info->index == 0 &&
         info->len == len && info->opcode == WS_TEXT) {
-        data[len] = 0;
-        Serial.println((char *)data);
+        // HUB-02: this used to be Serial.println() straight from the AsyncTCP
+        // task, racing the ESP-NOW callback's Serial.write(). The line now
+        // goes through the same queue, so it is emitted whole or not at all.
+        //
+        // PROTOCOL: still a bare newline-terminated JSON line on the wire --
+        // the browser's phone path is unchanged. The newline is appended here
+        // because the queue carries records, not a stream.
+        if (len + 1 > MESQ_USB_REC_MAX) return;      // bounded, never truncate
+        uint8_t rec[MESQ_USB_REC_MAX];
+        memcpy(rec, data, len);
+        rec[len] = '\n';
+        mesqUsbPush(&g_usb, rec, (uint8_t)(len + 1));
     }
 }
 
 void onEvent(AsyncWebSocket *server, AsyncWebSocketClient *client,
              AwsEventType type, void *arg, uint8_t *data, size_t len) {
     switch (type) {
-    case WS_EVT_CONNECT:
-        Serial.printf("WS client #%u connected from %s\n",
-                      client->id(), client->remoteIP().toString().c_str());
+    // These were raw Serial.printf() into the live binary stream -- HUB-02
+    // every time a phone connected or dropped. Framed now.
+    case WS_EVT_CONNECT: {
+        char b[96];
+        snprintf(b, sizeof(b), "WS connect #%u from %s",
+                 client->id(), client->remoteIP().toString().c_str());
+        hubEmitStatus(b);
         break;
-    case WS_EVT_DISCONNECT:
-        Serial.printf("WS client #%u disconnected\n", client->id());
+    }
+    case WS_EVT_DISCONNECT: {
+        char b[64];
+        snprintf(b, sizeof(b), "WS disconnect #%u", client->id());
+        hubEmitStatus(b);
         break;
+    }
     case WS_EVT_DATA:
         handleWebSocketMessage(arg, data, len);
         break;
@@ -398,6 +518,10 @@ void initWebSocket() {
 //  FREERTOS WORKER TASKS
 // ============================================================
 
+// HUB-06: Phase 1 shipped these two as empty no-op loops. They are kept as
+// named placeholders only because removing task handles other code refers to
+// is a wider change than this phase warrants; they do nothing and cost one
+// tick each. Recorded in the backlog rather than silently deleted.
 void webSocketTask(void *pvParameters) {
     for (;;) vTaskDelay(pdMS_TO_TICKS(100));
 }
@@ -407,11 +531,82 @@ void espNowTask(void *pvParameters) {
 }
 
 // ============================================================
+//  USB WRITER  -- HUB-02
+//  THE ONLY PLACE Serial.write() IS CALLED FOR STREAM DATA.
+//
+//  CONCURRENCY: producers are the ESP-NOW receive callback (WiFi task, core
+//  0) and the WebSocket handler (AsyncTCP task, core 1). Both copy a whole
+//  record into g_usb and return. This task drains it. That is why a record
+//  can no longer be split by another writer.
+//
+//  It runs at priority 2 -- above the placeholder tasks -- because the queue
+//  is the system's latency buffer: 17 pods x 32 Hz is ~544 records/s and the
+//  ring is 128 deep, so roughly 235 ms of slack before records start being
+//  dropped. Draining promptly is what keeps that slack available.
+// ============================================================
+void usbWriterTask(void *pvParameters) {
+    uint8_t rec[MESQ_USB_REC_MAX];
+    uint8_t len;
+    for (;;) {
+        bool any = false;
+        while (mesqUsbPop(&g_usb, rec, &len)) {
+            Serial.write(rec, len);
+            any = true;
+        }
+        // Yield one tick when the queue drained. Busy-spinning here would
+        // starve the very callbacks that feed it.
+        if (!any) vTaskDelay(1);
+    }
+}
+
+// ============================================================
+//  HOST COMMAND HANDLER  -- HUB-03
+//  Replaces:  if (Serial.available() > 0) { Serial.readString(); sendReset(); }
+//  See mesq_hub_core.h for the frame layout and for what the checksum does
+//  and does not protect against.
+// ============================================================
+void hostCmdTask(void *pvParameters) {
+    mesqCmdInit(&g_cmdParser);
+    MesqCmd cmd;
+    for (;;) {
+        while (Serial.available() > 0) {
+            int b = Serial.read();
+            if (b < 0) break;
+            if (mesqCmdFeed(&g_cmdParser, (uint8_t)b, &cmd)) {
+                char note[96];
+                switch (cmd.cmd) {
+                case MESQ_CMD_RESET_FLEET:
+                    g_cmdParser.resets++;
+                    snprintf(note, sizeof(note), "CMD reset_fleet accepted (#%u)",
+                             (unsigned)g_cmdParser.resets);
+                    hubEmitStatus(note);      // record WHY the fleet restarted
+                    sendReset();
+                    break;
+                case MESQ_CMD_PING:
+                    hubEmitStatus("CMD ping");
+                    break;
+                default:
+                    // Fail closed on an unknown command: acknowledge that it
+                    // was well-formed, do nothing, and do not guess.
+                    snprintf(note, sizeof(note), "CMD unknown id=0x%02X ignored", cmd.cmd);
+                    hubEmitStatus(note);
+                    break;
+                }
+            }
+        }
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+}
+
+// ============================================================
 //  SETUP
 // ============================================================
 
 void setup() {
     Serial.begin(921600);
+    mesqUsbInit(&g_usb);
+    mesqStatsInit(g_nodeStats, NUM_PODS);
+    mesqCmdInit(&g_cmdParser);
 
     // ===== Phase 2 W0: provenance banner (resolves U2 for the hub) =====
     // NOTE: this prints TEXT on the same stream that later carries binary
@@ -483,21 +678,33 @@ void setup() {
 
     Serial.println("Setup complete!");
 
+    // The USB writer runs at a higher priority than everything else: it is
+    // the only consumer of the queue every other path feeds.
+    xTaskCreatePinnedToCore(usbWriterTask,  "usbWriterTask",  4096, NULL, 2, NULL,                 1);
+    xTaskCreatePinnedToCore(hostCmdTask,    "hostCmdTask",    4096, NULL, 1, NULL,                 1);
     xTaskCreatePinnedToCore(espNowTask,     "espNowTask",     4096, NULL, 1, &espNowTaskHandle,    0);
     xTaskCreatePinnedToCore(webSocketTask,  "webSocketTask",  4096, NULL, 1, &webSocketTaskHandle, 1);
-    xTaskCreatePinnedToCore(podTimeoutTask, "podTimeoutTask", 2048, NULL, 1, NULL,                 1);
+    xTaskCreatePinnedToCore(podTimeoutTask, "podTimeoutTask", 4096, NULL, 1, NULL,                 1);
 }
 
 // ============================================================
 //  LOOP
 // ============================================================
 
+// HUB-03 -- Phase 1 was:
+//
+//     void loop() {
+//       if (Serial.available() > 0) { Serial.readString(); sendReset(); }
+//       vTaskDelay(pdMS_TO_TICKS(100));
+//     }
+//
+// ANY inbound byte rebooted all 17 pods. A terminal probe, line noise, an
+// `echo` into the wrong tty, or the browser's own startup traffic dropped the
+// suit mid-capture. Phase 1 listed it as one of the latching causes behind
+// symptoms S3/S4. Inbound bytes are now handled by hostCmdTask, which only
+// acts on a complete, checksummed, explicitly framed command.
 void loop() {
-    if (Serial.available() > 0) {
-        Serial.readString();
-        sendReset();
-    }
-    vTaskDelay(pdMS_TO_TICKS(100));
+    vTaskDelay(pdMS_TO_TICKS(1000));
 }
 
 // ============================================================

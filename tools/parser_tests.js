@@ -324,6 +324,33 @@ section('T16  NaN / degenerate quaternion policy on the JSON path');
 }
 
 /* ===================================================================== */
+section('C1  host -> hub command frames (HUB-03)');
+{
+  const f = P.encodeCommand(P.CMD_RESET_FLEET);
+  const h = Buffer.from(f).toString('hex');
+  console.log('     reset frame = ' + h);
+  // This exact string is asserted in tools/firmware_tests.cpp, which runs the
+  // C parser from Device code/Dongle_Binary/mesq_hub_core.h against it. If
+  // the two encoders ever diverge, one of the two suites fails.
+  ok(h === 'aa55fc010001', 'reset frame matches the C encoder byte for byte');
+  ok(f[0] === 0xAA && f[1] === 0x55 && f[2] === 0xFC, 'sync word plus the 0xFC host-command marker');
+  ok(f[f.length - 1] === (f[3] ^ f[4]), 'trailing byte is the xor over cmd and len');
+
+  const g = P.encodeCommand(0x05, [1, 2, 3]);
+  ok(g.length === 9, 'a 3-byte payload gives a 9-byte frame');
+  ok(g[g.length - 1] === (0x05 ^ 3 ^ 1 ^ 2 ^ 3), 'checksum covers the payload too');
+
+  let threw = false;
+  try { P.encodeCommand(1, new Array(17).fill(0)); } catch (e) { threw = true; }
+  ok(threw, 'an over-long payload is refused at the encoder, not truncated silently');
+
+  // The old call site sent the literal text "reboot". Confirm that text is
+  // NOT a valid frame, i.e. the new hub would correctly ignore it.
+  const oldWay = ascii('reboot');
+  ok(!(oldWay[0] === 0xAA && oldWay[1] === 0x55), 'the legacy "reboot" text is not a valid command frame');
+}
+
+/* ===================================================================== */
 console.log('\n' + '='.repeat(70));
 console.log('pass=' + pass + '  fail=' + fail);
 console.log('='.repeat(70));

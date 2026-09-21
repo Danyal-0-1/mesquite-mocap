@@ -427,6 +427,13 @@ static void test_hubcmd() {
         uint8_t f[8]; int n = mesqCmdBuild(f, MESQ_CMD_RESET_FLEET, NULL, 0);
         feed(f, n);
         ok(fired == 1 && cmd.cmd == MESQ_CMD_RESET_FLEET, "a well-formed reset command fires exactly once");
+
+        // Cross-language: the browser builds this frame in JavaScript
+        // (MesqParser.encodeCommand) and this C parser has to accept it.
+        // tools/parser_tests.js C1 asserts the same hex on the other side.
+        std::string h = hex(f, n);
+        printf("     C   reset frame = %s\n", h.c_str());
+        ok(h == "aa55fc010001", "C encoder is byte-identical to the JavaScript one");
     }
     // Byte-at-a-time and split across "reads".
     {
