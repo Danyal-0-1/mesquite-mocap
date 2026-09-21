@@ -198,24 +198,52 @@
   <div class="num">6</div>
 </div>
 
-<!-- 7 HOW THE PHONE KNOWS -->
+<!-- 7 HOW THE PHONE MAPS THE ROOM -->
 <div class="slide">
-  <h2>How the phone recovers yaw</h2>
-  <img class="photo" src="figs/nasa_feature_tracking.png" style="max-height:2.95in; border:1px solid #dfe3e8;">
-  <div class="credit">Real feature tracking between two camera frames — each line links the same physical
-    point seen twice. NASA/JPL-Caltech, Ingenuity Mars Helicopter — public domain, via
-    <a href="https://commons.wikimedia.org/wiki/File:Feature_Detection_and_Tracking_by_Mars_Helicopter.png">Wikimedia Commons</a></div>
-  <div class="defs" style="margin-top:0.24in;">
-    <div class="row"><b>The camera</b> picks out fixed points in the room and follows them frame to frame.</div>
-    <div class="row"><b>Turning the phone</b> sweeps every one of those points across the image by the same angle.</div>
-    <div class="row"><b>The room does not rotate</b> — so those points are an <i>external reference</i>, which is exactly what a body sensor lacks.</div>
-    <div class="therefore">
-      The gyroscope is fast but drifts. The camera is slower but stays locked to the room.
-      ARKit fuses both — that is <b>visual&#8211;inertial odometry</b>, and it is the only source of
-      yaw anywhere in this system.
+  <h2>How the phone maps the room</h2>
+  <div class="cols" style="align-items:center;">
+    <div class="col" style="flex:1.25;">
+      <img class="photo" src="figs/room_mapping.jpg" style="max-height:3.7in; border:1px solid #dfe3e8;">
+      <div class="credit">A head-worn AR device building a live mesh of the room around it. Kai Kowalewski,
+        CC&nbsp;BY-SA&nbsp;4.0, via <a href="https://commons.wikimedia.org/wiki/File:MicrosoftHoloLensRoomScan.JPG">Wikimedia Commons</a>.
+        The iPhone does the same with its camera and IMU.</div>
+    </div>
+    <div class="col defs" style="flex:1;">
+      <div class="row"><b>It watches the room, not you.</b> The camera looks outward and picks out fixed
+        geometry — walls, furniture, floor texture.</div>
+      <div class="row"><b>It builds a map</b> of where those things are, and remembers it.</div>
+      <div class="row"><b>As the person walks it keeps re-observing</b> the same geometry from new angles,
+        and corrects its own position and orientation every frame.</div>
+      <div class="therefore">
+        The room is <b>not moving</b>. So a device that can see it has something absolute to measure
+        itself against — which is exactly what a sensor strapped to a leg does not.
+      </div>
     </div>
   </div>
   <div class="num">7</div>
+</div>
+
+<!-- 8 MAP TO HEADING -->
+<div class="slide">
+  <h2>How that map becomes our global heading</h2>
+  <ul class="steps" style="font-size:15.5pt;">
+    <li>From the map, the phone knows <b>its own pose in the room</b> — where it is and which way it points.</li>
+    <li>We want <b>one number</b> out of that: the rotation about the vertical axis. The <b>heading</b>.</li>
+    <li>The phone is <b>bolted to the pelvis</b>, so phone heading plus the mount calibration gives us
+        the <b>pelvis heading in the room</b> — call it <code>&psi;<sub>phone</sub></code>.</li>
+    <li>That is the <b>global heading</b>. It is the only measurement in the whole system that is tied to
+        anything outside the body.</li>
+  </ul>
+  <p class="therefore" style="font-size:15.5pt;">
+    <b>Why it stays correct:</b> the gyroscope drifts because nothing corrects it. The phone's heading
+    does not, because every frame it is checked against a room that has not moved. The error is
+    <b>bounded</b>, not accumulating.
+  </p>
+  <p style="margin-top:0.16in; font-size:14.5pt; color:#6b737c;">
+    Zero is wherever the session started — not north. That is fine: we need a reference that
+    <b>holds still</b>, not one that points anywhere in particular.
+  </p>
+  <div class="num">8</div>
 </div>
 
 <!-- 8 WHAT IT GIVES / DOESN'T -->
@@ -243,7 +271,7 @@
     So the phone must tell us <b>when it is struggling</b> — that is why tracking state has to be on
     the wire, and why the model predicts its own confidence.
   </p>
-  <div class="num">8</div>
+  <div class="num">9</div>
 </div>
 
 <!-- 9 HOW THE YAW REACHES THE SENSORS -->
@@ -264,7 +292,7 @@
     Rotating about the vertical axis only means roll and pitch — which gravity already got right —
     are provably untouched.
   </p>
-  <div class="num">9</div>
+  <div class="num">10</div>
 </div>
 
 <!-- 10 IMPROVING THE PHONE INPUT -->
@@ -283,41 +311,9 @@
     None of this is machine learning. All of it has to be right <b>before</b> any model is trained,
     or the model gets paid to hide a calibration error.
   </p>
-  <div class="num">10</div>
-</div>
-
-<!-- 11 WHAT THE MODEL LEARNS -->
-<div class="slide">
-  <h2>What the model then learns from the phone</h2>
-  <div class="cols">
-    <div class="col card" style="border-color:#c9d4e8;">
-      <h3>What it is given</h3>
-      <ul style="font-size:14pt; margin-top:0.06in;">
-        <li>15 orientations, <b>already anchored</b> by the phone</li>
-        <li>The phone's pose, how fast it is changing, and <b>its tracking state</b></li>
-        <li>The skeleton — which segment connects to which</li>
-        <li>Time between samples, and which samples are real</li>
-      </ul>
-    </div>
-    <div class="col card" style="border-color:#d5cbe8;">
-      <h3>What it predicts</h3>
-      <ul style="font-size:14pt; margin-top:0.06in;">
-        <li><b>14 leftover heading corrections</b> — the part <code>C&#8320;</code> could not reach</li>
-        <li><b>A confidence</b> for each one</li>
-      </ul>
-      <p style="margin-top:0.12in; font-size:14pt; color:#4a525c;">
-        It never touches the root. The phone defines that.
-      </p>
-    </div>
-  </div>
-  <p class="therefore" style="font-size:14.5pt; margin-top:0.18in;">
-    <b>The phone is not just Stage 1 — it is an input.</b> When the phone is confident, the root is
-    trustworthy, so any remaining implausibility in the pose must belong to the <b>limbs</b>, and the
-    model can attribute it there. When the phone is struggling, that inference is unsafe — and the
-    model learns to back off instead of guessing.
-  </p>
   <div class="num">11</div>
 </div>
+
 
 <!-- 7 OPTIONS -->
 <div class="slide">
@@ -388,32 +384,164 @@
   <div class="num">15</div>
 </div>
 
-<!-- 11 MODEL -->
+<!-- DATA -->
 <div class="slide">
-  <h2>Stage 2 — the model</h2>
+  <h2>What we train the model on</h2>
   <div class="cols">
-    <div class="col">
-      <h3>Architecture</h3>
-      <ul style="font-size:15.5pt;">
-        <li><b>Graph encoder</b> over the skeleton — a forearm only talks to its neighbours</li>
-        <li><b>Bidirectional GRU</b>, ~2 s window — the project is offline, so future context is free</li>
-        <li>Output per sensor: a <b>heading correction</b> + <b>a confidence</b></li>
-      </ul>
+    <div class="col card" style="border-color:#bcd8bc;">
+      <h3 style="color:#1f7a3d;">AMASS — real human motion, exact answers</h3>
+      <p style="font-size:14.5pt;">A large public motion-capture archive. We place <b>15 virtual sensors</b>
+      on the skeleton and simulate what each one would have measured.</p>
+      <p style="font-size:14.5pt; margin-top:0.1in;">Because we generated it, we know the
+      <b>true heading of every segment exactly</b> — which no real recording of this suit can give us.</p>
     </div>
-    <div class="col">
-      <h3>Why it is small</h3>
-      <ul style="font-size:15.5pt;">
-        <li>It only corrects a <b>residual</b> — the physics is handed to it for free</li>
-        <li>The correction is locked to the <b>gravity axis</b>, so it <b>cannot</b> break roll or pitch</li>
-        <li>~200k parameters: runs on a laptop, plausible on-device later</li>
+    <div class="col card" style="border-color:#e8d5c0;">
+      <h3 style="color:#b07d28;">Then we break it, the way the real system breaks</h3>
+      <ul style="font-size:13.5pt; margin-top:0.06in;">
+        <li>independent start-up heading offsets, and slow drift per sensor</li>
+        <li>a common root offset</li>
+        <li>phone tracking loss, outages, and world-frame resets</li>
+        <li>dropped packets, repeated frames, timing jitter</li>
+        <li>quiet stretches where the answer is <b>genuinely ambiguous</b></li>
       </ul>
     </div>
   </div>
-  <p style="margin-top:0.1in; font-size:14.5pt; color:#6b737c;">
-    Trained on <b>AMASS</b> motion data with simulated sensors, so the true answer is known exactly.
-    Corruption (drift, dropouts, phone outages, mount slip) is modelled from <b>real measured</b> distributions.
+  <p class="therefore" style="font-size:15pt; margin-top:0.2in;">
+    The corruption is <b>not guessed</b> — the sizes come from instrumentation already measured on the
+    real hardware. Real recordings are kept back for <b>evaluation only</b>, never training.
   </p>
   <div class="num">16</div>
+</div>
+
+<!-- ARCHITECTURE -->
+<div class="slide">
+  <h2>The model</h2>
+  <div class="figwrap"><svg viewBox="0 0 1240 430" preserveAspectRatio="xMidYMid meet" font-family="Helvetica,Arial,sans-serif">
+  <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#5a6572"/>
+    </marker>
+    <marker id="arw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#6a4fb0"/>
+    </marker>
+  </defs>
+  <style>
+    .bx { fill:#fff; stroke:#9aa5b1; stroke-width:2; rx:10 }
+    .ml { fill:#f7f5ff; stroke:#6a4fb0; stroke-width:2.5; rx:10 }
+    .hd { font-size:19px; font-weight:700; fill:#16181d }
+    .tx { font-size:15px; fill:#4a525c }
+    .sm { font-size:13px; fill:#8a929c }
+    .fl { stroke:#5a6572; stroke-width:2.2; fill:none; marker-end:url(#ar) }
+  </style>
+
+  <!-- 1 INPUT -->
+  <rect class="bx" x="12" y="60" width="236" height="230"/>
+  <text class="hd" x="30" y="92">Inputs, per frame</text>
+  <text class="tx" x="30" y="124">15 segment orientations</text>
+  <text class="sm" x="30" y="143">already anchored by the phone, 6D</text>
+  <text class="tx" x="30" y="172">phone pose and its change</text>
+  <text class="tx" x="30" y="200">phone tracking state</text>
+  <text class="sm" x="30" y="219">how much to trust the anchor</text>
+  <text class="tx" x="30" y="248">&#916;t and validity mask</text>
+  <text class="sm" x="30" y="267">which samples are real, not held</text>
+
+  <!-- 2 GRAPH ENCODER -->
+  <rect class="ml" x="286" y="60" width="214" height="230"/>
+  <text class="hd" x="304" y="92">Graph encoder</text>
+  <text class="sm" x="304" y="112">messages follow the skeleton</text>
+  <g stroke="#6a4fb0" stroke-width="2.4">
+    <line x1="393" y1="140" x2="393" y2="196"/>
+    <line x1="393" y1="156" x2="352" y2="184"/>
+    <line x1="352" y1="184" x2="342" y2="224"/>
+    <line x1="393" y1="156" x2="434" y2="184"/>
+    <line x1="434" y1="184" x2="444" y2="224"/>
+    <line x1="393" y1="196" x2="368" y2="242"/>
+    <line x1="368" y1="242" x2="364" y2="276"/>
+    <line x1="393" y1="196" x2="418" y2="242"/>
+    <line x1="418" y1="242" x2="422" y2="276"/>
+  </g>
+  <g fill="#6a4fb0">
+    <circle cx="393" cy="134" r="7"/><circle cx="393" cy="196" r="7"/>
+    <circle cx="352" cy="184" r="7"/><circle cx="342" cy="224" r="7"/>
+    <circle cx="434" cy="184" r="7"/><circle cx="444" cy="224" r="7"/>
+    <circle cx="368" cy="242" r="7"/><circle cx="364" cy="276" r="7"/>
+    <circle cx="418" cy="242" r="7"/><circle cx="422" cy="276" r="7"/>
+  </g>
+  <line x1="434" y1="184" x2="442" y2="216" stroke="#6a4fb0" stroke-width="2.4" marker-end="url(#arw)"/>
+  <line x1="352" y1="184" x2="344" y2="216" stroke="#6a4fb0" stroke-width="2.4" marker-end="url(#arw)"/>
+
+  <!-- 3 BiGRU -->
+  <rect class="ml" x="538" y="60" width="244" height="230"/>
+  <text class="hd" x="556" y="92">Bidirectional GRU</text>
+  <text class="sm" x="556" y="112">a ~2 second window</text>
+  <g>
+    <rect x="558" y="150" width="40" height="46" rx="6" fill="#fff" stroke="#6a4fb0" stroke-width="2"/>
+    <rect x="612" y="150" width="40" height="46" rx="6" fill="#fff" stroke="#6a4fb0" stroke-width="2"/>
+    <rect x="666" y="150" width="40" height="46" rx="6" fill="#fff" stroke="#6a4fb0" stroke-width="2"/>
+    <rect x="720" y="150" width="40" height="46" rx="6" fill="#fff" stroke="#6a4fb0" stroke-width="2"/>
+  </g>
+  <g stroke="#6a4fb0" stroke-width="2" fill="none">
+    <line x1="598" y1="163" x2="608" y2="163" marker-end="url(#arw)"/>
+    <line x1="652" y1="163" x2="662" y2="163" marker-end="url(#arw)"/>
+    <line x1="706" y1="163" x2="716" y2="163" marker-end="url(#arw)"/>
+    <line x1="720" y1="185" x2="710" y2="185" marker-end="url(#arw)"/>
+    <line x1="666" y1="185" x2="656" y2="185" marker-end="url(#arw)"/>
+    <line x1="612" y1="185" x2="602" y2="185" marker-end="url(#arw)"/>
+  </g>
+  <text class="sm" x="556" y="224">past and future both help &#8212; an error</text>
+  <text class="sm" x="556" y="242">only shows up once the limb moves,</text>
+  <text class="sm" x="556" y="260">so the project is offline by choice</text>
+
+  <!-- 4 HEADS -->
+  <rect class="ml" x="820" y="60" width="200" height="230"/>
+  <text class="hd" x="838" y="92">Per-segment head</text>
+  <text class="sm" x="838" y="112">14 of them, root excluded</text>
+  <text class="tx" x="838" y="152">sin &#948;&#968;,&#160; cos &#948;&#968;</text>
+  <text class="sm" x="838" y="171">the heading correction</text>
+  <text class="tx" x="838" y="206">log &#963;&#178;</text>
+  <text class="sm" x="838" y="225">how sure it is</text>
+  <text class="sm" x="838" y="262">circular output, so there is no</text>
+  <text class="sm" x="838" y="278">jump at &#177;180&#176;</text>
+
+  <!-- 5 OUTPUT -->
+  <rect class="bx" x="1058" y="60" width="170" height="230"/>
+  <text class="hd" x="1076" y="92">Applied</text>
+  <text class="tx" x="1076" y="128">rotate about</text>
+  <text class="tx" x="1076" y="148">gravity only</text>
+  <text class="sm" x="1076" y="170">roll and pitch cannot</text>
+  <text class="sm" x="1076" y="186">be damaged</text>
+  <text class="tx" x="1076" y="222">forward</text>
+  <text class="tx" x="1076" y="242">kinematics</text>
+  <text class="sm" x="1076" y="264">global skeleton</text>
+
+  <!-- flows -->
+  <path class="fl" d="M250,175 L284,175"/>
+  <path class="fl" d="M502,175 L536,175"/>
+  <path class="fl" d="M784,175 L818,175"/>
+  <path class="fl" d="M1022,175 L1056,175"/>
+
+  <!-- footer -->
+  <rect class="bx" x="12" y="322" width="1216" height="90"/>
+  <text class="hd" x="34" y="354">About 200,000 parameters &#8212; small on purpose</text>
+  <text class="tx" x="34" y="382">It predicts only a RESIDUAL. The physics, the skeleton and the phone anchor are all given to it for free,</text>
+  <text class="tx" x="34" y="402">so there is little left to learn. The root correction is fixed at zero: the phone owns the root.</text>
+</svg></div>
+  <div class="credit">Diagram of this project's own architecture.</div>
+  <div class="num">17</div>
+</div>
+
+<!-- WHY THIS MODEL -->
+<div class="slide">
+  <h2>Why this model, and not a bigger one</h2>
+  <table style="font-size:14.5pt;">
+    <tr><th style="width:30%">Choice</th><th>Reason</th></tr>
+    <tr><td><b>Graph over the skeleton</b></td><td>A forearm's error is constrained by its upper arm and hand — <b>not</b> by the opposite foot. Restricting messages to real joints encodes anatomy and keeps the model small.</td></tr>
+    <tr><td><b>Bidirectional, ~2 s window</b></td><td>A heading error is <b>invisible until the limb moves</b>. Offline, so future context is free.</td></tr>
+    <tr><td><b>Rotation about gravity only</b></td><td>It <b>structurally cannot</b> damage roll and pitch, which gravity already got right.</td></tr>
+    <tr><td><b>It predicts confidence</b></td><td>Standing still, the answer genuinely is not knowable. The model must be able to say so instead of inventing one.</td></tr>
+    <tr><td><b>~200k parameters</b></td><td>It corrects a <b>residual</b>, with physics and the phone anchor handed to it for free. A large model would mostly memorise a small real dataset.</td></tr>
+  </table>
+  <div class="num">18</div>
 </div>
 
 <!-- 12 RL -->
@@ -433,7 +561,7 @@
       is a genuine sequential decision. Small, and a fair stretch goal.</p>
     </div>
   </div>
-  <div class="num">17</div>
+  <div class="num">19</div>
 </div>
 
 <!-- 13 EVALUATION -->
@@ -458,7 +586,7 @@
       </ul>
     </div>
   </div>
-  <div class="num">18</div>
+  <div class="num">20</div>
 </div>
 
 <!-- 14 TIMELINE -->
@@ -478,7 +606,7 @@
     The risky weeks are <b>first</b>, on purpose. If the phone doesn't send what we need,
     I want to know in week 1 — not week 7.
   </p>
-  <div class="num">19</div>
+  <div class="num">21</div>
 </div>
 
 <!-- 15 RISK -->
@@ -493,7 +621,7 @@
     The gate is in <b>week 3</b> so there is time to pivot — to packet-loss reconstruction
     or tracking-quality prediction, on the same data.
   </p>
-  <div class="num">20</div>
+  <div class="num">22</div>
 </div>
 
 <!-- 16 CONTRIBUTION -->
@@ -508,39 +636,42 @@
   <p class="lead" style="margin-top:0.3in;">
     <em class="hl">The project is useful whichever way the hypothesis falls.</em>
   </p>
-  <div class="num">21</div>
+  <div class="num">23</div>
 </div>
 
 <!-- IMAGE CREDITS -->
 <div class="slide">
   <h2>Image credits</h2>
   <table style="font-size:14pt;">
-    <tr><th style="width:22%">Slide</th><th>Source</th></tr>
+    <tr><th style="width:24%">Slide</th><th>Source</th></tr>
     <tr>
-      <td><b>4</b> — roll, pitch and yaw axes</td>
+      <td><b>Roll, pitch and yaw axes</b></td>
       <td>NASA Glenn Research Center, <i>Rollpitchyawplain.png</i>. <b>Public domain</b> (NASA).<br>
           <span style="color:#6b737c">commons.wikimedia.org/wiki/File:Rollpitchyawplain.png</span></td>
     </tr>
     <tr>
-      <td><b>7</b> — feature tracking between two camera frames</td>
-      <td>NASA/JPL-Caltech, Ingenuity Mars Helicopter navigation imagery,
-          <i>Feature Detection and Tracking by Mars Helicopter.png</i>. <b>Public domain</b> (NASA).<br>
-          <span style="color:#6b737c">commons.wikimedia.org/wiki/File:Feature_Detection_and_Tracking_by_Mars_Helicopter.png</span></td>
+      <td><b>Room being mapped</b></td>
+      <td>Kai Kowalewski, <i>MicrosoftHoloLensRoomScan.JPG</i>, cropped.
+          <b>CC BY-SA 4.0</b>.<br>
+          <span style="color:#6b737c">commons.wikimedia.org/wiki/File:MicrosoftHoloLensRoomScan.JPG</span></td>
+    </tr>
+    <tr>
+      <td><b>Pipeline and model diagrams</b></td>
+      <td>My own, since they describe this system.</td>
     </tr>
   </table>
-  <p style="margin-top:0.3in; font-size:14.5pt; color:#4a525c;">
-    Both images are works of the U.S. federal government and carry no copyright. The Mars Helicopter
-    image shows the same mechanism the iPhone uses — features tracked between two frames to recover
-    how far the camera turned.
+  <p style="margin-top:0.28in; font-size:14pt; color:#4a525c;">
+    Reuse of the CC BY-SA image requires attribution and share-alike; it is credited on the slide itself
+    as well as here.
   </p>
-  <div class="num">22</div>
+  <div class="num">24</div>
 </div>
 
 <!-- 17 END -->
 <div class="slide center">
   <h1 style="font-size:40pt;">Thank you</h1>
   <p class="lead" style="margin-top:0.3in; color:#4a525c;">Questions</p>
-  <div class="num">23</div>
+  <div class="num">25</div>
 </div>
 
 </body>

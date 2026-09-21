@@ -106,17 +106,25 @@ solves.
 
 Worth stating explicitly, because it is the assumption the whole project rests on.
 
-<img src="docs/figs/nasa_feature_tracking.png" width="640" alt="Feature tracking between two camera frames">
+<img src="docs/figs/room_mapping.jpg" width="620" alt="A head-worn AR device building a live mesh of the room">
 
-*Real feature tracking between two camera frames — each line links the same physical point seen twice.
-NASA/JPL-Caltech, Ingenuity Mars Helicopter navigation imagery — public domain, via
-[Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Feature_Detection_and_Tracking_by_Mars_Helicopter.png).
-The iPhone uses the same mechanism.*
+*A head-worn AR device building a live mesh of the room around it. Kai Kowalewski, CC BY-SA 4.0, via
+[Wikimedia Commons](https://commons.wikimedia.org/wiki/File:MicrosoftHoloLensRoomScan.JPG) (cropped).
+The iPhone does the same with its camera and IMU.*
 
-ARKit's world tracking is **visual–inertial odometry**. The camera extracts and tracks feature points
-across frames — the corner of a window, the edge of a table, texture on the floor. Those features are
-static in the world, so re-observing them constrains the device's absolute rotation. Between camera
-frames the IMU is integrated at high rate.
+ARKit's world tracking is **visual–inertial odometry**. The camera looks *outward* and extracts feature
+points from fixed geometry — walls, furniture, floor texture — and builds a map of where they are. As
+the wearer walks, the same geometry is re-observed from new angles and the device corrects its own
+position and orientation every frame. Between camera frames the IMU is integrated at high rate.
+
+**How that becomes a heading for us:**
+
+1. From the map, the phone knows **its own pose in the room**.
+2. We want **one number**: the rotation about the vertical axis — the heading.
+3. The phone is rigidly mounted to the pelvis, so phone heading composed with the mount calibration
+   gives the **pelvis heading in the room**, `ψ_phone`.
+4. That is the **global heading** — the only measurement in the system tied to anything outside the
+   body.
 
 The two are complementary in exactly the way we need:
 
@@ -254,16 +262,7 @@ evidence.
 
 ### Architecture
 
-```mermaid
-flowchart TD
-  IN["Per frame:<br/>15 segment orientations (6D)<br/>phone pose + Δpose + tracking state<br/>gyro/accel, Δt, validity mask"]
-  GE["Graph encoder<br/>message passing over the<br/>skeleton adjacency only"]
-  TE["Bidirectional GRU<br/>~2 s window"]
-  HD["Per-segment head<br/>(sin δψ, cos δψ, log σ²)"]
-  FK["Differentiable forward kinematics"]
-  OUT["Corrected global skeleton"]
-  IN --> GE --> TE --> HD --> FK --> OUT
-```
+![Model architecture](docs/figs/model_architecture.svg)
 
 | Choice | Why |
 |---|---|
@@ -470,15 +469,16 @@ knowing, and is currently unknown.
 
 ### Image credits
 
-Both photographs are works of the U.S. federal government and carry no copyright.
+Licences differ between the two photographs; both are credited where they appear.
 
 - Roll/pitch/yaw axes — NASA Glenn Research Center, *Rollpitchyawplain.png*, public domain, via
   [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Rollpitchyawplain.png)
-- Feature tracking — NASA/JPL-Caltech, Ingenuity Mars Helicopter,
-  *Feature Detection and Tracking by Mars Helicopter.png*, public domain, via
-  [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Feature_Detection_and_Tracking_by_Mars_Helicopter.png)
+- Room being mapped — Kai Kowalewski, *MicrosoftHoloLensRoomScan.JPG*, **CC BY-SA 4.0**, cropped, via
+  [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:MicrosoftHoloLensRoomScan.JPG). Reuse
+  requires attribution and share-alike.
 
-The pipeline diagram in §4 is my own, since it describes this system specifically.
+The pipeline diagram in §4 and the architecture diagram in §5 are my own, since they describe this
+system specifically.
 
 *(Internal evidence: `system_assessment/`, `system_assessment_2/`, `system_assessment_3/` in this
 repository. Claims are tagged `[fact-code]`, `[fact-data]`, `[inference]` or `[unverified]` there.)*

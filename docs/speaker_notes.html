@@ -41,7 +41,7 @@
 <body>
 
 <h1>Speaker notes</h1>
-<div class="sub">Root-Anchored Yaw Correction — project proposal · 23 slides · about 18 minutes</div>
+<div class="sub">Root-Anchored Yaw Correction — project proposal · 25 slides · about 19 minutes</div>
 
 <div class="intro">
   <p><b>How to use this.</b> The <span style="color:#1f7a3d;font-weight:700">green</span> block is what to
@@ -50,8 +50,9 @@
   audience is technical, or hold it for questions. The
   <span style="color:#b07d28;font-weight:700">amber</span> block is a question you should expect.</p>
   <p><b>If you are short on time</b>, the six slides that carry the argument are
-  <b>3 (the problem)</b>, <b>4 (why yaw)</b>, <b>6 (the finding)</b>, <b>7 (how the phone does it)</b>,
-  <b>9 (how it reaches the sensors)</b> and <b>14 (the method)</b>. Everything else can be compressed.</p>
+  <b>4 (why yaw)</b>, <b>6 (the finding)</b>, <b>7 (how the phone maps the room)</b>,
+  <b>10 (how it reaches the sensors)</b>, <b>14 (the method)</b> and <b>17 (the model)</b>.
+  Everything else can be compressed.</p>
   <p><b>The one sentence to land:</b> the phone already knows which way the body is facing, the system
   currently ignores it, and once you fix that the remaining error is a genuine learning problem.</p>
 </div>
@@ -158,32 +159,27 @@
 
 <!-- 7 -->
 <div class="slide">
-  <div class="hdr"><span class="badge">7</span><span class="title">How the phone recovers yaw</span><span class="time">~80 s</span></div>
-  <div class="block simple"><div class="lbl">Say it simply — point at the picture first</div>
-  <p>"This is real data from NASA's Mars helicopter, and it's the same trick the iPhone uses. Two camera
-  frames, side by side. Every coloured line joins the same physical point seen in both. That's it —
-  that's feature tracking. The camera picks out fixed points, follows them frame to frame, and when the
-  camera turns, all those points sweep across the image by the same angle. So you can read the rotation
-  straight off." <span class="pause">pause</span> "And the key thing: the room doesn't rotate. It's an
-  outside reference — exactly the thing a body sensor doesn't have. The gyroscope is fast but drifts;
-  the camera is slower but stays locked to the room. Put them together and you get both. That's what
-  ARKit does, and it's the only source of yaw anywhere in this system."</p></div>
+  <div class="hdr"><span class="badge">7</span><span class="title">How the phone maps the room</span><span class="time">~80 s</span></div>
+  <div class="block simple"><div class="lbl">Say it simply</div>
+  <p>"So how does the phone manage what fifteen body sensors can't? It looks at the room. The camera faces outward and picks out fixed geometry — walls, furniture, the texture of the floor — and builds a map of where all that is. Then, as the person walks around, it keeps seeing the same geometry from new angles, and every single frame it corrects its own position and which way it's pointing." <span class="pause">pause</span> "And that's the whole thing: <i>the room is not moving</i>. A device that can see the room has something absolute to measure itself against. A sensor strapped to your leg has nothing — it can only feel gravity and its own spin."</p></div>
   <div class="block tech"><div class="lbl">Technical</div>
-  <p>ARKit world tracking is visual–inertial odometry. Feature points are extracted and tracked across
-  camera frames; the IMU is integrated at high rate between them. Re-observing the same static feature
-  constrains absolute rotation, which bounds the gyro's accumulated bias error. Useful asymmetry: VIO
-  constrains rotation considerably better than translation, and rotation is precisely what we are
-  taking from it.</p></div>
+  <p>ARKit world tracking is visual–inertial odometry: feature points extracted and tracked across camera frames, with the IMU integrated at high rate between them. Re-observing static world features constrains absolute rotation, which bounds the gyro's accumulated bias. Useful asymmetry — VIO constrains rotation considerably better than translation, and rotation is exactly what we take.</p></div>
   <div class="block ask"><div class="lbl">Expect</div>
-  <p><b>"Why can't the body sensors do this?"</b> — No camera. Gyro and accelerometer only, so there is
-  nothing to correct the drift against.<br>
-  <b>"Is that actually an iPhone image?"</b> — No, and say so: it's NASA's Ingenuity helicopter, used
-  because it's public domain and shows the mechanism clearly. Credited on the last slide.</p></div>
+  <p><b>"That's a headset, not a phone."</b> — Say it before they do: it is a HoloLens, used because it is openly licensed and shows the room mesh clearly. Same class of technology; the iPhone does this with its camera and IMU. Credited on the last slide.<br><b>"Why can't the body sensors do it?"</b> — No camera. Nothing to correct the drift against.</p></div>
 </div>
 
 <!-- 8 -->
 <div class="slide">
-  <div class="hdr"><span class="badge">8</span><span class="title">What that buys us — and what it doesn't</span><span class="time">~65 s</span></div>
+  <div class="hdr"><span class="badge">8</span><span class="title">How that map becomes our global heading</span><span class="time">~70 s</span></div>
+  <div class="block simple"><div class="lbl">Say it simply</div>
+  <p>"Four steps to get from that map to the number we actually want. One: from the map, the phone knows its own pose in the room. Two: we only want <i>one</i> number out of that — the rotation about the vertical axis, the heading. Three: the phone is bolted to the pelvis, so the phone's heading plus the mount calibration gives us the pelvis heading in the room. Four: that's our global heading — and it's the only measurement in this whole system tied to anything outside the body." <span class="pause">pause</span> "And the reason it stays right: the gyroscope drifts because nothing checks it. The phone's heading is checked against a room that hasn't moved, every frame. So the error is bounded instead of piling up. Zero is wherever the session started — that's not north, and it doesn't need to be. We need a reference that holds still, not one that points somewhere particular."</p></div>
+  <div class="block tech"><div class="lbl">Technical</div>
+  <p>With <code>.gravity</code> world alignment, Y is along gravity and the horizontal axes are fixed by the device pose at session start, so heading is session-relative with an arbitrary origin but stable thereafter. Drift is bounded, not zero, and relocalisation produces discrete jumps rather than smooth error. If the app instead requests <code>.gravityAndHeading</code> it aligns to true north via the magnetometer — which would contradict the premise, and is a week-one check.</p></div>
+</div>
+
+<!-- 9 -->
+<div class="slide">
+  <div class="hdr"><span class="badge">9</span><span class="title">What that buys us — and what it doesn't</span><span class="time">~65 s</span></div>
   <div class="block simple"><div class="lbl">Say it simply</div>
   <p>"Three things we get: a heading that stays put, no compass so no metal problem, and hardware
   already strapped to the person. But I want to be clear about the limits. It doesn't give us north —
@@ -208,9 +204,9 @@
   <i>say this, it shows you've thought about your own assumption.</i></p></div>
 </div>
 
-<!-- 9 -->
+<!-- 10 -->
 <div class="slide">
-  <div class="hdr"><span class="badge">9</span><span class="title">How the phone's yaw reaches the 15 sensors</span><span class="time">~70 s</span></div>
+  <div class="hdr"><span class="badge">10</span><span class="title">How the phone's yaw reaches the 15 sensors</span><span class="time">~70 s</span></div>
   <div class="block simple"><div class="lbl">Say it simply</div>
   <p>"So how does one phone fix fifteen sensors? Four steps. The phone says where the pelvis points in
   the room. The suit says where <i>it</i> thinks the pelvis points, in its own made-up frame. Subtract
@@ -231,9 +227,9 @@
   removes.</p></div>
 </div>
 
-<!-- 10 -->
+<!-- 11 -->
 <div class="slide">
-  <div class="hdr"><span class="badge">10</span><span class="title">Making the phone input usable</span><span class="time">~65 s</span></div>
+  <div class="hdr"><span class="badge">11</span><span class="title">Making the phone input usable</span><span class="time">~65 s</span></div>
   <div class="block simple"><div class="lbl">Say it simply</div>
   <p>"Before any of that works, the phone's data has to be good enough to fuse, and right now it isn't.
   Five fixes. There's no timestamp on the phone message, so I add one and line up the clocks — there
@@ -250,31 +246,6 @@
   position guard at <code>custom_icm.js:931</code> is a truthiness test on a float. Mount slip is
   either eliminated mechanically or modelled as an explicitly identified state; it is not something to
   ask a network to absorb.</p></div>
-</div>
-
-<!-- 11 -->
-<div class="slide">
-  <div class="hdr"><span class="badge">11</span><span class="title">What the model learns from the phone</span><span class="time">~75 s</span></div>
-  <div class="block simple"><div class="lbl">Say it simply</div>
-  <p>"Now the model. It's given the fifteen orientations <i>after</i> the phone has anchored them, the
-  phone's own pose and how confident it is, the skeleton layout, and the timing. It predicts fourteen
-  leftover corrections — one per non-root sensor — and a confidence for each. It never touches the
-  root; the phone owns that." <span class="pause">pause</span> "And this is the part worth
-  understanding: the phone isn't just used once at the start — it's an <i>input</i> to the model. When
-  the phone is confident, we know the root is right, so if the pose still looks wrong, the problem must
-  be in the limbs, and the model can go fix them. When the phone is struggling, that reasoning breaks
-  down — and the model learns to back off instead of guessing."</p></div>
-  <div class="block tech"><div class="lbl">Technical</div>
-  <p>Inputs: 15 anchored orientations in 6D representation, phone pose and pose increments, tracking
-  state, Δt, validity mask, skeleton adjacency. Outputs: 14 gravity-axis residuals as (sin, cos) plus a
-  log-variance each; root residual fixed at zero. The phone's confidence conditions the attribution —
-  it determines whether residual implausibility is identifiable as limb error at all. That is the
-  causal link between Stage 1 and Stage 3, and it is why tracking state has to be a model input rather
-  than just a preprocessing filter.</p></div>
-  <div class="block ask"><div class="lbl">Expect</div>
-  <p><b>"Couldn't you just run the model without the phone?"</b> — You could, but then the common and
-  differential errors are entangled and the model has to solve both from motion alone. The phone
-  removes one of them for free. That separation is the design.</p></div>
 </div>
 
 <!-- 12 -->
@@ -349,31 +320,38 @@
 
 <!-- 16 -->
 <div class="slide">
-  <div class="hdr"><span class="badge">16</span><span class="title">Stage 2 — the model</span><span class="time">~70 s</span></div>
+  <div class="hdr"><span class="badge">16</span><span class="title">What we train the model on</span><span class="time">~70 s</span></div>
   <div class="block simple"><div class="lbl">Say it simply</div>
-  <p>"The model is deliberately small — about two hundred thousand parameters, which is tiny by modern
-  standards. Two ideas. First, a sensor only exchanges information with its <i>neighbours</i> on the
-  body: your forearm's error is constrained by your upper arm and hand, not by your opposite foot.
-  Second, it looks at a couple of seconds at a time, because an error only becomes visible once that
-  limb moves. And I train it on a big public motion-capture dataset with simulated sensors, so I know
-  the exact right answer."</p></div>
+  <p>"Training data. We use AMASS — a large public archive of real human motion capture. We put fifteen <i>virtual</i> sensors on the skeleton and simulate what each one would have measured. The point of doing it that way is that we generated it, so we know the true heading of every segment exactly — and no real recording of this suit can give us that, because there's nothing to measure it against." <span class="pause">pause</span> "Then we deliberately break it, the same ways the real system breaks: each sensor starts at its own wrong heading and drifts, the phone loses tracking, packets go missing, and there are quiet stretches where the answer genuinely isn't knowable. Those failure sizes aren't invented — they come from instrumentation already measured on the real hardware. Real recordings are held back for evaluation only."</p></div>
   <div class="block tech"><div class="lbl">Technical</div>
-  <p>Graph encoder over skeleton adjacency, bidirectional GRU over a ~2 s window, per-segment head
-  emitting (sin δψ, cos δψ, log σ²). 6D rotation representation (Zhou, CVPR 2019) for continuity;
-  circular output avoids the ±π discontinuity. Losses: geodesic SO(3), differentiable-FK joint position,
-  Gaussian NLL, and a smoothness term on the correction rather than on the motion. Trained on AMASS
-  with virtual sensors; corruption distributions calibrated from instrumentation measured on the real
-  hardware.</p></div>
+  <p>Subject-disjoint splits; hyperparameters tuned on validation subjects only; the test set is opened once. The deliberately ambiguous low-excitation intervals are what train the uncertainty head — the label exists but the input does not identify it, which is precisely the condition the model has to learn to recognise.</p></div>
   <div class="block ask"><div class="lbl">Expect</div>
-  <p><b>"Why so small? Why not a transformer?"</b> — Because it only predicts a <i>residual</i>. The
-  physics and the skeleton are given to it for free, and the real dataset is small enough that a big
-  model would just memorise it. The correction is also locked to the gravity axis, so it structurally
-  cannot break the roll and pitch that are already correct.</p></div>
+  <p><b>"Isn't synthetic training a weakness?"</b> — It is the only place exact heading ground truth exists. The sim-to-real gap is handled by calibrating the corruption from real measurements and by reporting synthetic and real results separately, never merged.</p></div>
 </div>
 
 <!-- 17 -->
 <div class="slide">
-  <div class="hdr"><span class="badge">17</span><span class="title">On reinforcement learning</span><span class="time">~60 s</span></div>
+  <div class="hdr"><span class="badge">17</span><span class="title">The model</span><span class="time">~85 s — walk the diagram left to right</span></div>
+  <div class="block simple"><div class="lbl">Say it simply</div>
+  <p>"Left to right. <b>Inputs</b>: the fifteen orientations after the phone has anchored them, the phone's own pose and how much it trusts itself, the time step, and a flag for which samples are real rather than repeated. <b>Graph encoder</b>: each sensor only exchanges information with its neighbours on the body — that little skeleton in the box is literally the message-passing structure. <b>Bidirectional GRU</b>: about two seconds at a time, looking both backwards and forwards. <b>Head</b>: for each of the fourteen non-root sensors it outputs a heading correction and a confidence. <b>Applied</b>: the correction is a rotation about gravity only, then forward kinematics gives the final skeleton." <span class="pause">pause</span> "Two hundred thousand parameters. Tiny — and that's deliberate, which is the next slide."</p></div>
+  <div class="block tech"><div class="lbl">Technical</div>
+  <p>Rotations enter as 6D representation (Zhou, CVPR 2019); the head emits (sin δψ, cos δψ, log σ²) per segment, with the root residual fixed at zero. Loss: geodesic SO(3) + differentiable-FK joint position + Gaussian NLL + a smoothness term on the correction rather than the motion. The phone's tracking state is a model <i>input</i>, not just a preprocessing filter — it conditions whether residual implausibility is attributable to the limbs at all.</p></div>
+</div>
+
+<!-- 18 -->
+<div class="slide">
+  <div class="hdr"><span class="badge">18</span><span class="title">Why this model, and not a bigger one</span><span class="time">~65 s</span></div>
+  <div class="block simple"><div class="lbl">Say it simply</div>
+  <p>"Why these choices. <b>A graph over the skeleton</b>, because a forearm's error is constrained by its upper arm and hand — not by the opposite foot. <b>Bidirectional</b>, because a heading error is invisible until that limb moves, and since we're offline, looking ahead is free. <b>Rotation about gravity only</b>, so it structurally cannot damage the roll and pitch that gravity already got right. <b>It predicts confidence</b>, because standing still the answer genuinely isn't knowable and the model has to be able to say so. And <b>small</b>, because it's only correcting a residual — the physics, the skeleton and the phone anchor are all handed to it for free, so there isn't much left to learn. A big model would mostly memorise a small real dataset."</p></div>
+  <div class="block tech"><div class="lbl">Technical</div>
+  <p>Ablations are specified for each: remove graph edges (dense), remove temporal context (per-frame), remove uncertainty gating, remove the phone as an input, and an independent per-sensor BiGRU at matched parameter count. That last one isolates how much the skeletal structure is worth versus model capacity.</p></div>
+  <div class="block ask"><div class="lbl">Expect</div>
+  <p><b>"Why not a transformer?"</b> — Nothing to gain. The inductive bias we want (anatomy, locality, short horizon) is exactly what the graph and the GRU already give, and the real dataset is small.</p></div>
+</div>
+
+<!-- 19 -->
+<div class="slide">
+  <div class="hdr"><span class="badge">19</span><span class="title">On reinforcement learning</span><span class="time">~60 s</span></div>
   <div class="block simple"><div class="lbl">Say it simply</div>
   <p>"I was asked about using reinforcement learning, so let me be straight about it. For the main job
   it's the wrong tool — when you already know the right answer from your training data, you should just
@@ -393,9 +371,9 @@
   weaker result later. The adaptation piece delivers what RL was wanted <i>for</i>.</p></div>
 </div>
 
-<!-- 18 -->
+<!-- 20 -->
 <div class="slide">
-  <div class="hdr"><span class="badge">18</span><span class="title">How we'll know it worked</span><span class="time">~55 s</span></div>
+  <div class="hdr"><span class="badge">20</span><span class="title">How we'll know it worked</span><span class="time">~55 s</span></div>
   <div class="block simple"><div class="lbl">Say it simply</div>
   <p>"I measure heading error in degrees per body part, and also where the joints end up in space,
   because a small error at the hips becomes a big error at the hand. Three rules I'm setting in advance:
@@ -410,9 +388,9 @@
   phenomenon being measured.</p></div>
 </div>
 
-<!-- 19 -->
+<!-- 21 -->
 <div class="slide">
-  <div class="hdr"><span class="badge">19</span><span class="title">Ten weeks</span><span class="time">~50 s</span></div>
+  <div class="hdr"><span class="badge">21</span><span class="title">Ten weeks</span><span class="time">~50 s</span></div>
   <div class="block simple"><div class="lbl">Say it simply</div>
   <p>"Ten weeks. The first two are unglamorous — reading the phone code and fixing the logging — and
   that's on purpose. The risky question is whether the phone actually sends what I need, and I want to
@@ -425,9 +403,9 @@
   and optical access, which are the items most likely to slip.</p></div>
 </div>
 
-<!-- 20 -->
+<!-- 22 -->
 <div class="slide">
-  <div class="hdr"><span class="badge">20</span><span class="title">The honest risk</span><span class="time">~45 s</span></div>
+  <div class="hdr"><span class="badge">22</span><span class="title">The honest risk</span><span class="time">~45 s</span></div>
   <div class="block simple"><div class="lbl">Say it simply</div>
   <p>"The honest risk is that the geometry fix alone solves most of it and there isn't much left for the
   model to do. I'd rather say that now than discover it in week nine. And it wouldn't be a failed
@@ -443,9 +421,9 @@
   the pivot targets are already scoped. Either path ends in a complete, evaluated result.</p></div>
 </div>
 
-<!-- 21 -->
+<!-- 23 -->
 <div class="slide">
-  <div class="hdr"><span class="badge">21</span><span class="title">What this contributes</span><span class="time">~45 s</span></div>
+  <div class="hdr"><span class="badge">23</span><span class="title">What this contributes</span><span class="time">~45 s</span></div>
   <div class="block simple"><div class="lbl">Say it simply</div>
   <p>"Four things. A working way to anchor this kind of suit to a phone's camera tracking. A small model
   that fixes what's left once that anchor exists. A test setup that can actually tell the different
@@ -458,18 +436,16 @@
   deterministic/learned boundary for magnetometer-free suits with a body-worn visual anchor.</p></div>
 </div>
 
-<!-- 22 -->
+<!-- 24 -->
 <div class="slide">
-  <div class="hdr"><span class="badge">22</span><span class="title">Image credits</span><span class="time">~10 s</span></div>
+  <div class="hdr"><span class="badge">24</span><span class="title">Image credits</span><span class="time">~10 s</span></div>
   <div class="block simple"><div class="lbl">Say it simply</div>
-  <p>"Both photographs are NASA, public domain — the axes diagram from Glenn Research Center, and the
-  feature-tracking frames from the Ingenuity Mars helicopter." Don't dwell; it's there so the
-  attribution is on the record.</p></div>
+  <p>"The axes diagram is NASA, public domain. The room-mapping photograph is Creative Commons, credited here and on the slide. The pipeline and model diagrams are mine." Don't dwell.</p></div>
 </div>
 
-<!-- 23 -->
+<!-- 25 -->
 <div class="slide">
-  <div class="hdr"><span class="badge">23</span><span class="title">Questions</span><span class="time">—</span></div>
+  <div class="hdr"><span class="badge">25</span><span class="title">Questions</span><span class="time">—</span></div>
   <div class="block simple"><div class="lbl">Say it simply</div>
   <p>"Happy to take questions."</p></div>
   <div class="block ask"><div class="lbl">Have ready</div>

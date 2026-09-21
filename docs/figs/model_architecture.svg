@@ -1,0 +1,110 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 430" font-family="Helvetica,Arial,sans-serif">
+  <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#5a6572"/>
+    </marker>
+    <marker id="arw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#6a4fb0"/>
+    </marker>
+  </defs>
+  <style>
+    .bx { fill:#fff; stroke:#9aa5b1; stroke-width:2; rx:10 }
+    .ml { fill:#f7f5ff; stroke:#6a4fb0; stroke-width:2.5; rx:10 }
+    .hd { font-size:19px; font-weight:700; fill:#16181d }
+    .tx { font-size:15px; fill:#4a525c }
+    .sm { font-size:13px; fill:#8a929c }
+    .fl { stroke:#5a6572; stroke-width:2.2; fill:none; marker-end:url(#ar) }
+  </style>
+
+  <!-- 1 INPUT -->
+  <rect class="bx" x="12" y="60" width="236" height="230"/>
+  <text class="hd" x="30" y="92">Inputs, per frame</text>
+  <text class="tx" x="30" y="124">15 segment orientations</text>
+  <text class="sm" x="30" y="143">already anchored by the phone, 6D</text>
+  <text class="tx" x="30" y="172">phone pose and its change</text>
+  <text class="tx" x="30" y="200">phone tracking state</text>
+  <text class="sm" x="30" y="219">how much to trust the anchor</text>
+  <text class="tx" x="30" y="248">&#916;t and validity mask</text>
+  <text class="sm" x="30" y="267">which samples are real, not held</text>
+
+  <!-- 2 GRAPH ENCODER -->
+  <rect class="ml" x="286" y="60" width="214" height="230"/>
+  <text class="hd" x="304" y="92">Graph encoder</text>
+  <text class="sm" x="304" y="112">messages follow the skeleton</text>
+  <g stroke="#6a4fb0" stroke-width="2.4">
+    <line x1="393" y1="140" x2="393" y2="196"/>
+    <line x1="393" y1="156" x2="352" y2="184"/>
+    <line x1="352" y1="184" x2="342" y2="224"/>
+    <line x1="393" y1="156" x2="434" y2="184"/>
+    <line x1="434" y1="184" x2="444" y2="224"/>
+    <line x1="393" y1="196" x2="368" y2="242"/>
+    <line x1="368" y1="242" x2="364" y2="276"/>
+    <line x1="393" y1="196" x2="418" y2="242"/>
+    <line x1="418" y1="242" x2="422" y2="276"/>
+  </g>
+  <g fill="#6a4fb0">
+    <circle cx="393" cy="134" r="7"/><circle cx="393" cy="196" r="7"/>
+    <circle cx="352" cy="184" r="7"/><circle cx="342" cy="224" r="7"/>
+    <circle cx="434" cy="184" r="7"/><circle cx="444" cy="224" r="7"/>
+    <circle cx="368" cy="242" r="7"/><circle cx="364" cy="276" r="7"/>
+    <circle cx="418" cy="242" r="7"/><circle cx="422" cy="276" r="7"/>
+  </g>
+  <line x1="434" y1="184" x2="442" y2="216" stroke="#6a4fb0" stroke-width="2.4" marker-end="url(#arw)"/>
+  <line x1="352" y1="184" x2="344" y2="216" stroke="#6a4fb0" stroke-width="2.4" marker-end="url(#arw)"/>
+
+  <!-- 3 BiGRU -->
+  <rect class="ml" x="538" y="60" width="244" height="230"/>
+  <text class="hd" x="556" y="92">Bidirectional GRU</text>
+  <text class="sm" x="556" y="112">a ~2 second window</text>
+  <g>
+    <rect x="558" y="150" width="40" height="46" rx="6" fill="#fff" stroke="#6a4fb0" stroke-width="2"/>
+    <rect x="612" y="150" width="40" height="46" rx="6" fill="#fff" stroke="#6a4fb0" stroke-width="2"/>
+    <rect x="666" y="150" width="40" height="46" rx="6" fill="#fff" stroke="#6a4fb0" stroke-width="2"/>
+    <rect x="720" y="150" width="40" height="46" rx="6" fill="#fff" stroke="#6a4fb0" stroke-width="2"/>
+  </g>
+  <g stroke="#6a4fb0" stroke-width="2" fill="none">
+    <line x1="598" y1="163" x2="608" y2="163" marker-end="url(#arw)"/>
+    <line x1="652" y1="163" x2="662" y2="163" marker-end="url(#arw)"/>
+    <line x1="706" y1="163" x2="716" y2="163" marker-end="url(#arw)"/>
+    <line x1="720" y1="185" x2="710" y2="185" marker-end="url(#arw)"/>
+    <line x1="666" y1="185" x2="656" y2="185" marker-end="url(#arw)"/>
+    <line x1="612" y1="185" x2="602" y2="185" marker-end="url(#arw)"/>
+  </g>
+  <text class="sm" x="556" y="224">past and future both help &#8212; an error</text>
+  <text class="sm" x="556" y="242">only shows up once the limb moves,</text>
+  <text class="sm" x="556" y="260">so the project is offline by choice</text>
+
+  <!-- 4 HEADS -->
+  <rect class="ml" x="820" y="60" width="200" height="230"/>
+  <text class="hd" x="838" y="92">Per-segment head</text>
+  <text class="sm" x="838" y="112">14 of them, root excluded</text>
+  <text class="tx" x="838" y="152">sin &#948;&#968;,&#160; cos &#948;&#968;</text>
+  <text class="sm" x="838" y="171">the heading correction</text>
+  <text class="tx" x="838" y="206">log &#963;&#178;</text>
+  <text class="sm" x="838" y="225">how sure it is</text>
+  <text class="sm" x="838" y="262">circular output, so there is no</text>
+  <text class="sm" x="838" y="278">jump at &#177;180&#176;</text>
+
+  <!-- 5 OUTPUT -->
+  <rect class="bx" x="1058" y="60" width="170" height="230"/>
+  <text class="hd" x="1076" y="92">Applied</text>
+  <text class="tx" x="1076" y="128">rotate about</text>
+  <text class="tx" x="1076" y="148">gravity only</text>
+  <text class="sm" x="1076" y="170">roll and pitch cannot</text>
+  <text class="sm" x="1076" y="186">be damaged</text>
+  <text class="tx" x="1076" y="222">forward</text>
+  <text class="tx" x="1076" y="242">kinematics</text>
+  <text class="sm" x="1076" y="264">global skeleton</text>
+
+  <!-- flows -->
+  <path class="fl" d="M250,175 L284,175"/>
+  <path class="fl" d="M502,175 L536,175"/>
+  <path class="fl" d="M784,175 L818,175"/>
+  <path class="fl" d="M1022,175 L1056,175"/>
+
+  <!-- footer -->
+  <rect class="bx" x="12" y="322" width="1216" height="90"/>
+  <text class="hd" x="34" y="354">About 200,000 parameters &#8212; small on purpose</text>
+  <text class="tx" x="34" y="382">It predicts only a RESIDUAL. The physics, the skeleton and the phone anchor are all given to it for free,</text>
+  <text class="tx" x="34" y="402">so there is little left to learn. The root correction is fixed at zero: the phone owns the root.</text>
+</svg>
