@@ -2,7 +2,7 @@
 
 ### Using an iPhone's visual–inertial pelvis pose and a small skeleton-aware network to remove global heading drift
 
-**Danyal Khorami** · Machine Learning · Project Proposal · 2.5-month scope
+**Danyal Khorami** · Machine Learning · Project Proposal · 10 weeks (8-week core + 2-week extension)
 
 ---
 
@@ -296,13 +296,18 @@ would erase the phenomenon being measured. Without optical access, real trials a
 
 ---
 
-## 8. Timeline — 10 weeks
+## 8. Timeline — 10 weeks (requirement: at least 8)
+
+The course requires a minimum of **8 weeks**. This plan runs **10**, structured so that a
+**complete, evaluated result exists at the end of week 8** and weeks 9–10 add the real-hardware
+evaluation and the write-up. If anything in the risky first three weeks slips, the floor is still
+met: the project degrades to the 8-week core rather than to an unfinished one.
 
 ```mermaid
 gantt
     dateFormat  YYYY-MM-DD
     axisFormat  W%W
-    title 2.5-month plan
+    title 10-week plan (8-week core + 2-week extension)
 
     section Foundation
     Audit phone app and browser path, freeze conventions   :a1, 2026-09-28, 7d
@@ -320,25 +325,34 @@ gantt
     Train graph-BiGRU with uncertainty                     :c1, after b2, 10d
     Ablations and uncertainty analysis                     :c2, after c1, 5d
 
-    section Evaluation
-    Real captures + optical reference                      :d1, after c2, 6d
+    section Week 8 floor
+    MILESTONE complete synthetic result                    :milestone, m1, after c2, 0d
+
+    section Extension (weeks 9-10)
+    Real captures + optical reference                      :d1, after m1, 6d
     Statistics, figures, write-up                          :d2, after d1, 6d
 ```
 
-| Week | Deliverable |
-|---|---|
-| 1 | Answers to the open questions in §10; frozen frame conventions and message schema |
-| 2 | Raw synchronized logging: phone timestamp, tracking state, session ID; pod acquisition time |
-| 3 | **Go/no-go gate** — deterministic phone-root baseline measured |
-| 4–5 | Synthetic generator, corruption model, metric harness |
-| 6 | Classical + per-sensor baselines, frozen |
-| 7–8 | Graph-BiGRU trained; ablations |
-| 9 | Real captures with optical reference |
-| 10 | Statistics, failure analysis, paper |
+| Week | Deliverable | Phase |
+|---|---|---|
+| 1 | Answers to the open questions in §10; frozen frame conventions and message schema | core |
+| 2 | Raw synchronized logging: phone timestamp, tracking state, session ID; pod acquisition time | core |
+| 3 | **Go/no-go gate** — deterministic phone-root baseline measured | core |
+| 4–5 | Synthetic generator, corruption model, metric harness | core |
+| 6 | Classical + per-sensor baselines, frozen | core |
+| 7–8 | Graph-BiGRU trained; ablations; uncertainty analysis | core |
+| **8** | **★ Milestone: a complete result on synthetic data** — model vs frozen baselines, with ablations and CIs. This alone satisfies the 8-week requirement and is defensible on its own. | **floor** |
+| 9 | Real captures with optical reference | extension |
+| 10 | Statistics, failure analysis, paper | extension |
 
-Weeks 1–3 are the risky part and they are deliberately front-loaded: if the phone does not transmit
-orientation and timestamps, everything downstream stalls, and I need to know that in week 1, not
-week 7.
+**Why the split matters.** Weeks 1–8 depend only on things I control: the repository, AMASS, and a
+laptop. Weeks 9–10 depend on hardware access and an optical reference, which are the two things most
+likely to slip. Putting the complete quantitative result at week 8 means a scheduling problem costs
+the *real-data* section, not the whole project.
+
+Weeks 1–3 are the risky part within the core, and they are deliberately front-loaded: if the phone
+does not transmit orientation and timestamps, everything downstream stalls, and I need to know that
+in week 1, not week 7.
 
 ---
 
