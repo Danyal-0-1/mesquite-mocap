@@ -2,6 +2,32 @@
 
 Diagnosis only. **Zero code was changed** outside this directory.
 
+---
+
+> ### Phase 3 update (2026-09-20) — implementation has now happened
+>
+> The sentence above still describes **Phase 1**, which was diagnosis only.
+> Phase 3 implemented and tested the A1 findings plus the hub dependencies needed
+> to verify them, on branch `a1-implementation`. It did **not** redo
+> `system_assessment_2/`; the Phase 2 delta is stated explicitly in
+> [`01_node_firmware/A1_00_IMPLEMENTATION_PLAN.md`](01_node_firmware/A1_00_IMPLEMENTATION_PLAN.md) §3.
+>
+> - **Node:** [`01_node_firmware/SOLVED.md`](01_node_firmware/SOLVED.md) and the
+>   `A1_00`–`A1_10` reports beside it
+> - **Hub:** [`02_hub/HUB_SOLVED.md`](02_hub/HUB_SOLVED.md)
+> - **Learn and retype:** [`01_node_firmware/A1_05_RETYPE_THESE.md`](01_node_firmware/A1_05_RETYPE_THESE.md)
+>
+> **No firmware was built for the target and nothing ran on hardware.** 189 host
+> assertions pass across five suites (`tools/run_all_tests.sh`). `CODE_FIXED` is
+> not `VERIFIED`.
+>
+> Three Phase 1 conclusions below need a footnote now: the "three latching
+> failures" are fixed **in source** (Phase 2 had already reduced them to two);
+> the DMP ~55 Hz figure remains a code comment, not a measurement; and the
+> accuracy conclusion is unchanged — heading is still unreferenced.
+
+---
+
 ## Read in this order
 
 1. **[FINDINGS.md](FINDINGS.md)** — master ledger, ranked by (impact × confidence) ÷ cost
