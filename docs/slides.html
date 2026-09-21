@@ -44,6 +44,10 @@
   .figwrap { flex: 1; display: flex; align-items: center; justify-content: center; }
   .figwrap svg { width: 100%; height: auto; }
   .photo { display: block; margin: 0 auto; max-width: 100%; }
+  .imgslot { border: 2px dashed #c9d2db; border-radius: 10px; background: #fbfcfd;
+             display: flex; align-items: center; justify-content: center; flex-direction: column;
+             color: #9aa5b1; font-size: 13pt; text-align: center; padding: 0.3in; }
+  .imgslot b { color: #7b8794; font-size: 14pt; display: block; margin-bottom: 0.08in; }
   .credit { font-size: 10.5pt; color: #9aa5b1; margin-top: 0.1in; text-align: center; }
   .credit a { color: #9aa5b1; text-decoration: none; }
   .defs { font-size: 16pt; line-height: 1.5; }
@@ -198,34 +202,92 @@
   <div class="num">6</div>
 </div>
 
-<!-- 7 HOW THE PHONE MAPS THE ROOM -->
+<!-- 7 WHAT THE PHONE RUNS -->
 <div class="slide">
-  <h2>How the phone maps the room</h2>
-  <div class="cols" style="align-items:center;">
-    <div class="col" style="flex:1.25;">
-      <img class="photo" src="figs/room_mapping.jpg" style="max-height:3.7in; border:1px solid #dfe3e8;">
-      <div class="credit">A head-worn AR device building a live mesh of the room around it. Kai Kowalewski,
-        CC&nbsp;BY-SA&nbsp;4.0, via <a href="https://commons.wikimedia.org/wiki/File:MicrosoftHoloLensRoomScan.JPG">Wikimedia Commons</a>.
-        The iPhone does the same with its camera and IMU.</div>
+  <h2>What the phone actually runs</h2>
+  <div class="cols">
+    <div class="col" style="flex:1.05;">
+      <div class="imgslot" style="height:2.55in;">
+        <b>[ image slot ]</b>
+        a phone tracking a room &#8212; feature points<br>or the detected planes, ideally a screenshot<br>from our own app in the lab
+      </div>
     </div>
-    <div class="col defs" style="flex:1;">
-      <div class="row"><b>It watches the room, not you.</b> The camera looks outward and picks out fixed
-        geometry — walls, furniture, floor texture.</div>
-      <div class="row"><b>It builds a map</b> of where those things are, and remembers it.</div>
-      <div class="row"><b>As the person walks it keeps re-observing</b> the same geometry from new angles,
-        and corrects its own position and orientation every frame.</div>
+    <div class="col defs" style="flex:1.35;">
+      <div class="row"><b>Two sensors, fused.</b> The rear <b>camera</b> at ~60 Hz and the
+        <b>IMU</b> — gyroscope and accelerometer — internally at ~1&nbsp;kHz.</div>
+      <div class="row"><b>The camera tracks feature points</b>, not objects: high-contrast corners and
+        texture on walls, furniture and floor. Typically a few hundred per frame.</div>
+      <div class="row"><b>Those points are static in the world.</b> Seeing the same one from a new angle
+        constrains where the camera moved and how far it turned.</div>
       <div class="therefore">
-        The room is <b>not moving</b>. So a device that can see it has something absolute to measure
-        itself against — which is exactly what a sensor strapped to a leg does not.
+        Apple calls this <b>visual&#8211;inertial odometry</b> (VIO). It is the core of ARKit's
+        world tracking, and it is the only source of heading anywhere in this system.
       </div>
     </div>
   </div>
   <div class="num">7</div>
 </div>
 
+<!-- 8 IS IT SLAM -->
+<div class="slide">
+  <h2>Is it SLAM? Nearly &#8212; and the difference matters</h2>
+  <div class="cols">
+    <div class="col card" style="border-color:#c9d4e8;">
+      <h3>Odometry</h3>
+      <p style="font-size:14.5pt;">Tracks <b>how you moved</b>, frame to frame. Fast and local. Error
+      grows the further you travel, because nothing ever re-anchors it.</p>
+    </div>
+    <div class="col card" style="border-color:#d5cbe8;">
+      <h3 style="color:#6a4fb0;">SLAM adds a map</h3>
+      <p style="font-size:14.5pt;">Also <b>remembers where things are</b>, recognises a place it has
+      already seen, and snaps back onto the old map. That is <b>relocalisation</b>.</p>
+    </div>
+  </div>
+  <p class="therefore" style="font-size:15.5pt; margin-top:0.24in;">
+    <b>ARKit does both.</b> VIO for frame-to-frame motion, plus a persistent sparse map of feature
+    points that it can relocalise against after an interruption. So in practice it is SLAM, even though
+    Apple's own term is visual&#8211;inertial odometry.
+  </p>
+  <p style="margin-top:0.18in; font-size:15pt;">
+    <b>Why we care:</b> relocalisation is what stops the heading drifting forever &#8212; but it also
+    means the pose can <b>jump</b> when it re-finds itself. Both are things the model has to know about.
+  </p>
+  <div class="num">8</div>
+</div>
+
+<!-- 9 POSITION VS HEADING -->
+<div class="slide">
+  <h2>How it gets position &#8212; and why heading is the better number</h2>
+  <table style="font-size:14.5pt;">
+    <tr><th style="width:18%"></th><th style="width:44%">How the phone gets it</th><th>How good it is</th></tr>
+    <tr>
+      <td><b>Position</b></td>
+      <td>Triangulate the tracked feature points across frames to recover the camera's motion, then use
+          the <b>accelerometer for real-world scale</b> &#8212; a camera alone cannot tell a small room
+          up close from a big room far away.</td>
+      <td><b>Drifts with distance walked.</b> Every metre adds error; only relocalisation pulls it back.</td>
+    </tr>
+    <tr>
+      <td><b>Heading</b></td>
+      <td>Integrate the <b>gyroscope</b> for speed, and correct it against feature points that have not
+          moved.</td>
+      <td><b>Bounded.</b> Re-seeing known geometry re-pins the angle, so error does not accumulate.</td>
+    </tr>
+  </table>
+  <p class="therefore" style="font-size:15.5pt; margin-top:0.22in;">
+    <b>This asymmetry is lucky for us.</b> Rotation is the part VIO does well, and rotation is exactly
+    what we are taking from the phone. We are not asking it for the hard thing.
+  </p>
+  <p style="margin-top:0.16in; font-size:14pt; color:#6b737c;">
+    The phone <b>reports</b> this as a 4&#215;4 transform per frame &#8212; position and orientation in
+    its session world &#8212; plus a timestamp and a tracking-quality state.
+  </p>
+  <div class="num">9</div>
+</div>
+
 <!-- 8 MAP TO HEADING -->
 <div class="slide">
-  <h2>How that map becomes our global heading</h2>
+  <h2>From the phone's heading to ours</h2>
   <ul class="steps" style="font-size:15.5pt;">
     <li>From the map, the phone knows <b>its own pose in the room</b> — where it is and which way it points.</li>
     <li>We want <b>one number</b> out of that: the rotation about the vertical axis. The <b>heading</b>.</li>
@@ -235,15 +297,14 @@
         anything outside the body.</li>
   </ul>
   <p class="therefore" style="font-size:15.5pt;">
-    <b>Why it stays correct:</b> the gyroscope drifts because nothing corrects it. The phone's heading
-    does not, because every frame it is checked against a room that has not moved. The error is
-    <b>bounded</b>, not accumulating.
+    Every other heading in the system is a guess that started somewhere arbitrary and has been drifting
+    since. This one is <b>tied to the room</b>.
   </p>
   <p style="margin-top:0.16in; font-size:14.5pt; color:#6b737c;">
     Zero is wherever the session started — not north. That is fine: we need a reference that
     <b>holds still</b>, not one that points anywhere in particular.
   </p>
-  <div class="num">8</div>
+  <div class="num">10</div>
 </div>
 
 <!-- 8 WHAT IT GIVES / DOESN'T -->
@@ -271,7 +332,7 @@
     So the phone must tell us <b>when it is struggling</b> — that is why tracking state has to be on
     the wire, and why the model predicts its own confidence.
   </p>
-  <div class="num">9</div>
+  <div class="num">11</div>
 </div>
 
 <!-- 9 HOW THE YAW REACHES THE SENSORS -->
@@ -292,7 +353,7 @@
     Rotating about the vertical axis only means roll and pitch — which gravity already got right —
     are provably untouched.
   </p>
-  <div class="num">10</div>
+  <div class="num">12</div>
 </div>
 
 <!-- 10 IMPROVING THE PHONE INPUT -->
@@ -311,7 +372,7 @@
     None of this is machine learning. All of it has to be right <b>before</b> any model is trained,
     or the model gets paid to hide a calibration error.
   </p>
-  <div class="num">11</div>
+  <div class="num">13</div>
 </div>
 
 
@@ -327,7 +388,7 @@
     <tr class="pick"><td>Use the phone as a root anchor</td><td>PICKED — the hardware is already worn</td></tr>
     <tr class="pick"><td>Learn the leftover per-segment error</td><td>PICKED — this is the contribution</td></tr>
   </table>
-  <div class="num">12</div>
+  <div class="num">14</div>
 </div>
 
 <!-- 8 WHY THIS SPLIT -->
@@ -342,7 +403,7 @@
     That leftover is recoverable only from <b>body structure and motion</b>.<br>
     <em class="hl">That is the learning problem.</em>
   </p>
-  <div class="num">13</div>
+  <div class="num">15</div>
 </div>
 
 <!-- 9 METHOD -->
@@ -364,7 +425,7 @@
     <b>Week 3 is a go/no-go gate.</b> If Stage 1 alone fixes most of it, the honest answer is
     "this was a missing coordinate transform, not a missing model" — and that is a result worth publishing.
   </p>
-  <div class="num">14</div>
+  <div class="num">16</div>
 </div>
 
 <!-- 10 STAGE 1 -->
@@ -381,7 +442,7 @@
     <li>Needs the <b>camera-to-hip offset</b>, or the position is wrong every time the pelvis turns</li>
     <li>We test <b>full rotation</b> vs <b>heading-only</b> and let the data choose</li>
   </ul>
-  <div class="num">15</div>
+  <div class="num">17</div>
 </div>
 
 <!-- DATA -->
@@ -410,7 +471,7 @@
     The corruption is <b>not guessed</b> — the sizes come from instrumentation already measured on the
     real hardware. Real recordings are kept back for <b>evaluation only</b>, never training.
   </p>
-  <div class="num">16</div>
+  <div class="num">18</div>
 </div>
 
 <!-- ARCHITECTURE -->
@@ -527,7 +588,7 @@
   <text class="tx" x="34" y="402">so there is little left to learn. The root correction is fixed at zero: the phone owns the root.</text>
 </svg></div>
   <div class="credit">Diagram of this project's own architecture.</div>
-  <div class="num">17</div>
+  <div class="num">19</div>
 </div>
 
 <!-- WHY THIS MODEL -->
@@ -541,7 +602,7 @@
     <tr><td><b>It predicts confidence</b></td><td>Standing still, the answer genuinely is not knowable. The model must be able to say so instead of inventing one.</td></tr>
     <tr><td><b>~200k parameters</b></td><td>It corrects a <b>residual</b>, with physics and the phone anchor handed to it for free. A large model would mostly memorise a small real dataset.</td></tr>
   </table>
-  <div class="num">18</div>
+  <div class="num">20</div>
 </div>
 
 <!-- 12 RL -->
@@ -561,7 +622,7 @@
       is a genuine sequential decision. Small, and a fair stretch goal.</p>
     </div>
   </div>
-  <div class="num">19</div>
+  <div class="num">21</div>
 </div>
 
 <!-- 13 EVALUATION -->
@@ -586,7 +647,7 @@
       </ul>
     </div>
   </div>
-  <div class="num">20</div>
+  <div class="num">22</div>
 </div>
 
 <!-- 14 TIMELINE -->
@@ -606,7 +667,7 @@
     The risky weeks are <b>first</b>, on purpose. If the phone doesn't send what we need,
     I want to know in week 1 — not week 7.
   </p>
-  <div class="num">21</div>
+  <div class="num">23</div>
 </div>
 
 <!-- 15 RISK -->
@@ -621,7 +682,7 @@
     The gate is in <b>week 3</b> so there is time to pivot — to packet-loss reconstruction
     or tracking-quality prediction, on the same data.
   </p>
-  <div class="num">22</div>
+  <div class="num">24</div>
 </div>
 
 <!-- 16 CONTRIBUTION -->
@@ -636,42 +697,32 @@
   <p class="lead" style="margin-top:0.3in;">
     <em class="hl">The project is useful whichever way the hypothesis falls.</em>
   </p>
-  <div class="num">23</div>
+  <div class="num">25</div>
 </div>
 
 <!-- IMAGE CREDITS -->
 <div class="slide">
   <h2>Image credits</h2>
-  <table style="font-size:14pt;">
-    <tr><th style="width:24%">Slide</th><th>Source</th></tr>
-    <tr>
-      <td><b>Roll, pitch and yaw axes</b></td>
-      <td>NASA Glenn Research Center, <i>Rollpitchyawplain.png</i>. <b>Public domain</b> (NASA).<br>
-          <span style="color:#6b737c">commons.wikimedia.org/wiki/File:Rollpitchyawplain.png</span></td>
-    </tr>
-    <tr>
-      <td><b>Room being mapped</b></td>
-      <td>Kai Kowalewski, <i>MicrosoftHoloLensRoomScan.JPG</i>, cropped.
-          <b>CC BY-SA 4.0</b>.<br>
-          <span style="color:#6b737c">commons.wikimedia.org/wiki/File:MicrosoftHoloLensRoomScan.JPG</span></td>
-    </tr>
-    <tr>
-      <td><b>Pipeline and model diagrams</b></td>
-      <td>My own, since they describe this system.</td>
-    </tr>
+  <p class="lead" style="color:#4a525c; margin-bottom:0.24in;">To fill in once the images are chosen.</p>
+  <table style="font-size:14.5pt;">
+    <tr><th style="width:34%">Slide</th><th>Source</th></tr>
+    <tr><td><b>4</b> — roll, pitch and yaw axes</td><td style="color:#9aa5b1;">&#8212;</td></tr>
+    <tr><td><b>7</b> — phone tracking a room</td><td style="color:#9aa5b1;">&#8212;</td></tr>
+    <tr><td><b>Pipeline and model diagrams</b></td><td>My own, since they describe this system.</td></tr>
   </table>
-  <p style="margin-top:0.28in; font-size:14pt; color:#4a525c;">
-    Reuse of the CC BY-SA image requires attribution and share-alike; it is credited on the slide itself
-    as well as here.
+  <p style="margin-top:0.3in; font-size:14pt; color:#6b737c;">
+    Check the licence before using anything: public domain and CC BY are safe with attribution, CC BY-SA
+    additionally requires share-alike, and vendor screenshots are usually not licensed for reuse. A
+    screenshot from our own app avoids the question entirely.
   </p>
-  <div class="num">24</div>
+  <div class="num">26</div>
 </div>
 
 <!-- 17 END -->
 <div class="slide center">
   <h1 style="font-size:40pt;">Thank you</h1>
   <p class="lead" style="margin-top:0.3in; color:#4a525c;">Questions</p>
-  <div class="num">25</div>
+  <div class="num">27</div>
 </div>
 
 </body>

@@ -33,11 +33,6 @@ the evidence about when learning helps and when it does not.
 
 ### 2.1 Why the error exists
 
-<img src="docs/figs/nasa_rollpitchyaw.png" width="430" alt="Roll, pitch and yaw axes">
-
-*Roll, pitch and yaw axes. NASA Glenn Research Center — public domain, via
-[Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Rollpitchyawplain.png).*
-
 An accelerometer measures **gravity**, which always points downward.
 
 - **Roll** — tilting left or right *changes* how gravity appears to the sensor.
@@ -106,16 +101,37 @@ solves.
 
 Worth stating explicitly, because it is the assumption the whole project rests on.
 
-<img src="docs/figs/room_mapping.jpg" width="620" alt="A head-worn AR device building a live mesh of the room">
+**What the phone runs.** ARKit world tracking fuses two sensors: the rear **camera** at ~60 Hz and
+the **IMU** (gyroscope + accelerometer) sampled internally at ~1 kHz. The camera does not recognise
+objects; it extracts a few hundred **feature points** per frame — high-contrast corners and texture on
+walls, furniture and floor. Those points are static in the world, so re-observing one from a new angle
+constrains how far the camera moved and how far it turned. Apple's term for this is
+**visual–inertial odometry** (VIO).
 
-*A head-worn AR device building a live mesh of the room around it. Kai Kowalewski, CC BY-SA 4.0, via
-[Wikimedia Commons](https://commons.wikimedia.org/wiki/File:MicrosoftHoloLensRoomScan.JPG) (cropped).
-The iPhone does the same with its camera and IMU.*
+**Is it SLAM?** Effectively yes, and the distinction matters.
 
-ARKit's world tracking is **visual–inertial odometry**. The camera looks *outward* and extracts feature
-points from fixed geometry — walls, furniture, floor texture — and builds a map of where they are. As
-the wearer walks, the same geometry is re-observed from new angles and the device corrects its own
-position and orientation every frame. Between camera frames the IMU is integrated at high rate.
+| | What it does | Consequence |
+|---|---|---|
+| **Odometry** | tracks frame-to-frame motion | error grows with distance travelled; nothing re-anchors it |
+| **SLAM** | also builds a map, recognises a previously seen place, and snaps back onto it | **relocalisation** bounds the error — but produces a *discrete jump* when it fires |
+
+ARKit does both: VIO for frame-to-frame motion, plus a persistent sparse feature map (`ARWorldMap`)
+it can relocalise against after an interruption. Relocalisation is what stops heading drifting
+indefinitely; it also means the pose can jump, which is a distinct failure mode from drift and is
+measured separately in §7.
+
+**Position and heading are not equally reliable.**
+
+| | How the phone gets it | Quality |
+|---|---|---|
+| **Position** | triangulate tracked feature points across frames, then take **metric scale from the accelerometer** — monocular vision recovers structure only *up to scale* | **drifts with distance walked**; corrected only by relocalisation |
+| **Heading** | integrate the **gyroscope** for rate, correct it against feature points that have not moved | **bounded** — re-observing known geometry re-pins the angle |
+
+This asymmetry is the quiet reason the project works: **rotation is the part VIO does well**, and
+rotation is exactly what we take from the phone. We are not asking it for the hard quantity.
+
+The phone reports the result as `ARFrame.camera.transform` — a 4×4 pose in its session world — with
+`ARFrame.timestamp` and `ARCamera.trackingState` alongside [19].
 
 **How that becomes a heading for us:**
 
@@ -467,18 +483,11 @@ knowing, and is currently unknown.
 18. Trumble, Gilbert, Malleson, Hilton, Collomosse. *Total Capture: 3D Human Pose Estimation Fusing Video and Inertial Sensors.* BMVC, 2017.
 19. Apple Developer Documentation — `ARFrame.timestamp`, `ARCamera.trackingState`, `ARConfiguration.WorldAlignment`.
 
-### Image credits
-
-Licences differ between the two photographs; both are credited where they appear.
-
-- Roll/pitch/yaw axes — NASA Glenn Research Center, *Rollpitchyawplain.png*, public domain, via
-  [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Rollpitchyawplain.png)
-- Room being mapped — Kai Kowalewski, *MicrosoftHoloLensRoomScan.JPG*, **CC BY-SA 4.0**, cropped, via
-  [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:MicrosoftHoloLensRoomScan.JPG). Reuse
-  requires attribution and share-alike.
+### Figures
 
 The pipeline diagram in §4 and the architecture diagram in §5 are my own, since they describe this
-system specifically.
+system specifically. Any third-party photographs added later must carry their licence and attribution
+here.
 
 *(Internal evidence: `system_assessment/`, `system_assessment_2/`, `system_assessment_3/` in this
 repository. Claims are tagged `[fact-code]`, `[fact-data]`, `[inference]` or `[unverified]` there.)*
