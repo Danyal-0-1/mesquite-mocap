@@ -33,11 +33,19 @@ the evidence about when learning helps and when it does not.
 
 ### 2.1 Why the error exists
 
-![Why heading is unobservable](docs/figs/observability.svg)
+<img src="docs/figs/nasa_rollpitchyaw.png" width="430" alt="Roll, pitch and yaw axes">
 
-A 6-axis IMU (gyroscope + accelerometer, **no magnetometer**) can see gravity. Gravity fixes two of
-three rotational degrees of freedom — roll and pitch have an absolute reference. Rotation *about*
-gravity — yaw, heading — has no reference at all in that pair [1].
+*Roll, pitch and yaw axes. NASA Glenn Research Center — public domain, via
+[Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Rollpitchyawplain.png).*
+
+An accelerometer measures **gravity**, which always points downward.
+
+- **Roll** — tilting left or right *changes* how gravity appears to the sensor.
+- **Pitch** — tilting forward or backward also *changes* gravity's measured direction.
+- **Yaw** — turning horizontally about the vertical axis **does not change** the direction of gravity.
+
+Therefore gravity corrects **roll and pitch**, but provides **no information about yaw** [1]. Without
+a magnetometer, a camera, or another external reference, yaw drifts.
 
 So every one of the 15 sensors boots at an arbitrary heading and then wanders independently. There is
 nothing in the sensor that can fix it.
@@ -98,7 +106,12 @@ solves.
 
 Worth stating explicitly, because it is the assumption the whole project rests on.
 
-![How ARKit recovers heading](docs/figs/vio.svg)
+<img src="docs/figs/nasa_feature_tracking.png" width="640" alt="Feature tracking between two camera frames">
+
+*Real feature tracking between two camera frames — each line links the same physical point seen twice.
+NASA/JPL-Caltech, Ingenuity Mars Helicopter navigation imagery — public domain, via
+[Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Feature_Detection_and_Tracking_by_Mars_Helicopter.png).
+The iPhone uses the same mechanism.*
 
 ARKit's world tracking is **visual–inertial odometry**. The camera extracts and tracks feature points
 across frames — the corner of a window, the edge of a table, texture on the floor. Those features are
@@ -454,6 +467,18 @@ knowing, and is currently unknown.
 17. Mahmood, Ghorbani, Troje, Pons-Moll, Black. *AMASS: Archive of Motion Capture as Surface Shapes.* ICCV, 2019.
 18. Trumble, Gilbert, Malleson, Hilton, Collomosse. *Total Capture: 3D Human Pose Estimation Fusing Video and Inertial Sensors.* BMVC, 2017.
 19. Apple Developer Documentation — `ARFrame.timestamp`, `ARCamera.trackingState`, `ARConfiguration.WorldAlignment`.
+
+### Image credits
+
+Both photographs are works of the U.S. federal government and carry no copyright.
+
+- Roll/pitch/yaw axes — NASA Glenn Research Center, *Rollpitchyawplain.png*, public domain, via
+  [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Rollpitchyawplain.png)
+- Feature tracking — NASA/JPL-Caltech, Ingenuity Mars Helicopter,
+  *Feature Detection and Tracking by Mars Helicopter.png*, public domain, via
+  [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Feature_Detection_and_Tracking_by_Mars_Helicopter.png)
+
+The pipeline diagram in §4 is my own, since it describes this system specifically.
 
 *(Internal evidence: `system_assessment/`, `system_assessment_2/`, `system_assessment_3/` in this
 repository. Claims are tagged `[fact-code]`, `[fact-data]`, `[inference]` or `[unverified]` there.)*
