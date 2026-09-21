@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 420" width="900" height="420" font-family="Helvetica,Arial,sans-serif">
+  <style>
+    .tb { font-size: 16px; font-weight: 700; fill: #1a1a1a; }
+    .t  { font-size: 13.5px; fill: #1a1a1a; }
+    .s  { font-size: 11.5px; fill: #666; }
+    .stage { fill: #fff; stroke: #9aa5b1; stroke-width: 1.6; rx: 9; }
+    .det   { fill: #eef5ff; stroke: #3d6fb4; stroke-width: 1.8; rx: 9; }
+    .ml    { fill: #f2f0ff; stroke: #6a4fb0; stroke-width: 1.8; rx: 9; }
+    .gate  { fill: #fff6e8; stroke: #b07d28; stroke-width: 1.8; rx: 9; }
+    .arrow { stroke: #5a6572; stroke-width: 1.8; fill: none; marker-end: url(#a); }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#5a6572"/>
+    </marker>
+  </defs>
+
+  <text class="tb" x="20" y="28">Three stages: fix what is knowable, learn only what is left</text>
+
+  <!-- inputs -->
+  <rect class="stage" x="20" y="58" width="180" height="70"/>
+  <text class="t" x="34" y="84">iPhone at the pelvis</text>
+  <text class="s" x="34" y="104">ARKit 6-DoF pose,</text>
+  <text class="s" x="34" y="120">timestamp, tracking state</text>
+
+  <rect class="stage" x="20" y="150" width="180" height="70"/>
+  <text class="t" x="34" y="176">15 body IMUs</text>
+  <text class="s" x="34" y="196">6-axis quaternions,</text>
+  <text class="s" x="34" y="212">no magnetometer</text>
+
+  <!-- stage 0 -->
+  <rect class="det" x="240" y="100" width="170" height="80"/>
+  <text class="t" x="254" y="126">Stage 0</text>
+  <text class="s" x="254" y="146">Clock map + phone-to-</text>
+  <text class="s" x="254" y="162">pelvis calibration</text>
+
+  <!-- stage 1 -->
+  <rect class="det" x="450" y="100" width="170" height="80"/>
+  <text class="t" x="464" y="126">Stage 1  (no ML)</text>
+  <text class="s" x="464" y="146">Root anchor: phone yaw</text>
+  <text class="s" x="464" y="162">replaces suit yaw</text>
+
+  <!-- stage 2 -->
+  <rect class="ml" x="450" y="230" width="170" height="86"/>
+  <text class="t" x="464" y="256">Stage 2  (the model)</text>
+  <text class="s" x="464" y="276">14 residual yaw offsets</text>
+  <text class="s" x="464" y="292">+ per-sensor variance</text>
+  <text class="s" x="464" y="308">~200k params</text>
+
+  <!-- stage 3 -->
+  <rect class="gate" x="660" y="230" width="170" height="86"/>
+  <text class="t" x="674" y="256">Stage 3</text>
+  <text class="s" x="674" y="276">Uncertainty gate:</text>
+  <text class="s" x="674" y="292">shrink the correction</text>
+  <text class="s" x="674" y="308">when unobservable</text>
+
+  <!-- output -->
+  <rect class="stage" x="660" y="100" width="170" height="80"/>
+  <text class="t" x="674" y="126">Global skeleton</text>
+  <text class="s" x="674" y="146">forward kinematics,</text>
+  <text class="s" x="674" y="162">BVH export</text>
+
+  <!-- arrows -->
+  <path class="arrow" d="M200,92 L240,128"/>
+  <path class="arrow" d="M200,185 L240,152"/>
+  <path class="arrow" d="M410,140 L450,140"/>
+  <path class="arrow" d="M535,180 L535,230"/>
+  <path class="arrow" d="M620,273 L660,273"/>
+  <path class="arrow" d="M745,230 L745,180"/>
+
+  <text class="s" x="240" y="352">Stage 1 is deterministic and testable on its own. If it closes most of the error,</text>
+  <text class="s" x="240" y="370">the honest finding is that the fix was a missing transform, not a missing model —</text>
+  <text class="s" x="240" y="388">and Stage 2 is only justified by a measured residual. That decision is Week 3.</text>
+</svg>
