@@ -340,6 +340,11 @@ var slerpDict = {
   <script type="module" src="js/threejsscene.js"></script>
   <!-- Phase 2 instrumentation: must load BEFORE webserialnative.js -->
   <script src="js/mesq_instr.js"></script>
+  <!-- Phase 3: shared stream parser. Classic script, so it executes before
+       the deferred module below that reads window.MesqParser. Same file is
+       loaded by tools/parser_tests.js, so the browser and the test suite
+       exercise one implementation. -->
+  <script src="js/mesq_parser.js"></script>
   <script type="module" src="js/webserialnative.js"></script>
 
   <script>
@@ -369,13 +374,33 @@ var slerpDict = {
       recording = true;
       recordedMotionData = [];
 
+      // ===== I12 WIRING (SYNC-07 / WEB-03 / EST-05) =====
+      // bvh_converter.js has computed a MEASURED frame time since Phase 2,
+      // but nothing ever populated window.mesqFrameTiming, so every export
+      // silently fell back to the asserted 1/30 s -- the ~7% progressive
+      // dilation that stops cross-correlation against ground truth from
+      // locking. performance.now() is monotonic and immune to wall-clock
+      // steps; the ISO stamps are only there to anchor the field log.
+      // UNITS: startMs/endMs are milliseconds on the monotonic clock.
+      window.mesqFrameTiming = {
+        frames:   0,
+        startMs:  performance.now(),
+        endMs:    performance.now(),
+        startISO: new Date().toISOString(),
+        endISO:   null
+      };
+
       // Store the first frame's joint data
       firstFrameJointData = updateMotionData();
 
-      // Call updateMotionData every 50ms
+      // The nominal grid is 30 Hz, but setInterval is best-effort: the real
+      // interval is whatever the main thread delivered, which is exactly why
+      // it must be measured rather than asserted.
       const intervalId = setInterval(() => {
         if (recording) {
           updateMotionData();
+          window.mesqFrameTiming.frames++;
+          window.mesqFrameTiming.endMs = performance.now();
         } else {
           clearInterval(intervalId);
         }
@@ -384,6 +409,13 @@ var slerpDict = {
 
     function stopRecording() {
       recording = false;
+
+      if (window.mesqFrameTiming) {
+        window.mesqFrameTiming.endISO = new Date().toISOString();
+        // The recorder pushes one frame per updateMotionData() call, so the
+        // authoritative frame count is the array length, not our tick count.
+        window.mesqFrameTiming.frames = recordedMotionData.length;
+      }
 
       // Call generateBVH and save the BVH file
       const bvhContent = generateBVH(firstFrameJointData, recordedMotionData);

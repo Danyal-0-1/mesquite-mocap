@@ -1158,7 +1158,9 @@ function restartPodsConfirm() {
   // Reset position to origin
   initialPosition = { x: 0, y: 0, z: 0 };
   
-  window.sWrite("reboot");
+  // HUB-03: was window.sWrite("reboot") -- the text was irrelevant, the hub
+  // reset on any byte at all. Now an explicit framed command.
+  window.mesqRebootFleet();
   M.toast({ html: '<ul><li>Please get in a T-pose and  wait for <span class="secs" style="font-size:200%;font-weight:bold">30 seconds</span>.</li><li>When done the T-Pose* will be set.</li><li><sub>* You can click on "Set T-Pose" button to do this at anytime.</sub></li>', classes: 'yellow black-text', displayLength: 30 * 1000 });
   setTimeout(function () {
     calibrate();
@@ -1232,7 +1234,9 @@ function boxCalibrateIn30() {
 
 function boxCalibratein30Confirm() {
   $("#boxcalibratein30").prop('disabled', true);
-  window.sWrite("reboot");
+  // HUB-03: was window.sWrite("reboot") -- the text was irrelevant, the hub
+  // reset on any byte at all. Now an explicit framed command.
+  window.mesqRebootFleet();
   var tSec = 45;
 
     M.toast({ html: 'Box Calibration in Progress...', classes: 'red black-text toastheader', displayLength: tSec * 1000 });

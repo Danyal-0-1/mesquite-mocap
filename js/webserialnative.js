@@ -28,12 +28,20 @@ const POD_PACKET_LEN = 16;
 const SYNC0 = 0xAA;
 const SYNC1 = 0x55;
 
-// Phase 2: framed status from the dongle. [0xAA][0x55][0xFE][len][payload]
-// Marker 0xFE sits outside the valid bone range 0..16 and outside the 0xFF
-// control marker, so it cannot collide with pod data. MUST be handled
-// explicitly -- without this branch the 16-byte reader would consume a
-// status frame as if it were a pod packet and mis-frame everything after it.
-const STATUS_MARKER = 0xFE;
+// =========================================================================
+//  PHASE 3: the byte-level state machine now lives in js/mesq_parser.js and
+//  is shared verbatim with tools/parser_tests.js. Phase 2 kept a hand-copied
+//  duplicate in the fixture ("kept in sync manually"), which meant a fix here
+//  was not actually covered by any test. There is now one implementation.
+//
+//  RECOVERY: the parser is bounded on three axes -- max JSON line, max buffer,
+//  and a stall timeout -- and treats an 0xAA 0x55 inside a JSON line as proof
+//  of a hub-side interleave (HUB-02), abandoning the text line and keeping the
+//  binary frame. WEB-02's permanent latch is structurally impossible now; see
+//  tools/parser_tests.js T4/T5.
+//
+//  LEARNING: A1_05_LEARNING_GUIDE.md ch. "Parser state machine".
+// =========================================================================
 window._hubStatus = [];          // last 120 framed status lines from the hub
 
 // Instrumentation hooks degrade to no-ops if js/mesq_instr.js is not loaded.
@@ -43,26 +51,9 @@ const _MI = (typeof MesqInstr !== 'undefined') ? MesqInstr : {
 };
 window._MI = _MI;
 
-// MUST match the bone-id table in pod_watch.ino and Dongle.ino.
-const BONE_NAMES = [
-  "Head",          //  0
-  "Spine",         //  1
-  "HipsAlt",       //  2
-  "LeftArm",       //  3
-  "LeftForeArm",   //  4
-  "LeftHand",      //  5
-  "RightArm",      //  6
-  "RightForeArm",  //  7
-  "RightHand",     //  8
-  "LeftUpLeg",     //  9
-  "LeftLeg",       // 10
-  "LeftFoot",      // 11
-  "RightUpLeg",    // 12
-  "RightLeg",      // 13
-  "RightFoot",     // 14
-  "LeftShoulder",  // 15
-  "RightShoulder", // 16
-];
+// MUST match the bone-id table in Pod_Watch_Binary.ino and Dongle_Binary.ino.
+// Re-exported from the shared module so there is a single source of truth.
+const BONE_NAMES = MesqParser.BONE_NAMES;
 
 // Live bone-id histogram. Inspect from DevTools console:
 //   window._podRx        -> { Head: 312, HipsAlt: 309, ... }
@@ -71,64 +62,21 @@ const BONE_NAMES = [
 window._podRx = {};
 window._podRxByteId = {};
 
-// Mode counters so you can confirm dual-mode parsing in a mixed deployment
-// (some clients still run the old JSON-emitting firmware; we run binary).
-//   window._rxMode.binary -> count of 16-byte binary frames decoded
-//   window._rxMode.json   -> count of JSON lines decoded
-// If both are climbing, you have a session with both firmwares feeding the
-// same browser tab and the parser is happy. If one is stuck at 0, that
-// flavour of pod/dongle isn't actually reaching the host.
+// Mode counters so you can confirm dual-mode parsing in a mixed deployment.
 window._rxMode = { binary: 0, json: 0 };
 
-function unpackPodPacket(buf16) {
-  const dv = new DataView(buf16.buffer, buf16.byteOffset, POD_PACKET_LEN);
-  const id = buf16[2];
-  window._podRxByteId[id] = (window._podRxByteId[id] || 0) + 1;
-  const name = BONE_NAMES[id];
-  if (!name) {
-    if (typeof window._unknownIdLogged === 'undefined') window._unknownIdLogged = {};
-    if (!window._unknownIdLogged[id]) {
-      window._unknownIdLogged[id] = true;
-      console.warn('[mocap] received unknown bone id ' + id + ' (no entry in BONE_NAMES). Pod firmware may be out of date or sync is misaligned.');
-    }
-    return null;
-  }
-  window._podRx[name] = (window._podRx[name] || 0) + 1;
-  return {
-    bone:   name,
-    batt:   buf16[3] / 100,
-    x:      dv.getInt16(4,  true) / 32767,
-    y:      dv.getInt16(6,  true) / 32767,
-    z:      dv.getInt16(8,  true) / 32767,
-    w:      dv.getInt16(10, true) / 32767,
-    count:  dv.getUint16(12, true),
-    // ms_lo wraps every ~65 s. The display code in custom_icm.js treats
-    // millis as "ms ago" and the original JSON path was already broken in
-    // the same way, so we preserve behaviour and just hand it the low 16
-    // bits. Latency UI is approximate; replace with a delta scheme later.
-    millis: dv.getUint16(14, true),
-  };
-}
+// SYNC-08 / NODE-02: per-node freshness. `millis` is now the pod's clock at
+// SAMPLE DECODE, so two packets carrying the same value carry the same sensor
+// sample -- the pod had nothing new to send. Counting those separates real
+// measurements from held poses, which the export must not conflate.
+window._podFresh = {};   // bone -> { fresh, held, lastMs }
 
-// Stream parser state. Held in module scope so it survives across reader.read()
-// chunks (a single 16-byte frame can straddle two reads).
-let _rxBuf = new Uint8Array(0);
-let _jsonLine = "";
-
-// Diagnostic surface. All of these are inspectable from DevTools so you can
-// see whether the wire is alive even when the rig isn't moving:
-//   window._rxBytes     -> total bytes read from serial (raw, pre-parse)
-//   window._rxLines     -> total newline-terminated text lines seen
-//   window._rxLast200   -> printable string of the most-recent ~200 bytes
-//                          (useful to eyeball whether JSON is arriving and
-//                          what it actually looks like when it does)
 window._rxBytes = 0;
 window._rxLines = 0;
 window._rxLast200 = "";
 
 function _recordTail(chunk) {
-  // Cheap printable-only tail buffer. Non-printable bytes become `.`. We keep
-  // ~200 chars so the user can paste/inspect what just came off the dongle.
+  // Cheap printable-only tail buffer. Non-printable bytes become `.`.
   let s = "";
   for (let k = 0; k < chunk.length; k++) {
     const c = chunk[k];
@@ -139,34 +87,88 @@ function _recordTail(chunk) {
   window._rxLast200 = (window._rxLast200 + s).slice(-200);
 }
 
-// Generalized bone-string repair. The legacy pod firmware sends a struct
-// with `String bone`, which puts a heap pointer on the wire; the dongle
-// dereferences garbage and produces lines like:
-//   {"bone":"Spine"q\x12...,"x":0.1,...}
-//   {"bone":"Hips"125,"x":...}
-// The original parser only patched the Hips125 case. This regex tolerates
-// ANY garbage between the closing quote of a known bone name and the next
-// real JSON delimiter (`,` or `}`), and rewrites it to a clean form.
-//
-// Order in the alternation matters: longer names first so "HipsAlt" is
-// matched before "Hips" would consume "Hips" out of "HipsAlt".
-const _BONE_REPAIR_RE = /"bone":"(LeftForeArm|RightForeArm|LeftShoulder|RightShoulder|LeftUpLeg|RightUpLeg|LeftHand|RightHand|LeftArm|RightArm|LeftLeg|RightLeg|LeftFoot|RightFoot|HipsAlt|Spine|Head|Hips)"([^,}]*)/g;
+function _dispatch(obj, isJson) {
+  try {
+    handleWSMessage(obj);
+  } catch (e) {
+    // Don't fully swallow -- log the first occurrence per bone so a broken
+    // bone surfaces in DevTools instead of silently going dark. This is
+    // exactly the gap that hid the HipsAlt-not-mapping issue.
+    if (typeof window._handleWSErr === 'undefined') window._handleWSErr = {};
+    if (!window._handleWSErr[obj.bone]) {
+      window._handleWSErr[obj.bone] = true;
+      console.error('[mocap] handleWSMessage threw for '
+        + (isJson ? 'JSON ' : '') + 'bone "' + obj.bone + '":', e);
+    }
+  }
+}
+
+const _parser = MesqParser.createParser({
+  onPodFrame(obj) {
+    window._podRxByteId[obj.id] = (window._podRxByteId[obj.id] || 0) + 1;
+    window._podRx[obj.bone] = (window._podRx[obj.bone] || 0) + 1;
+    window._rxMode.binary++;
+
+    // Freshness classification, before the frame reaches the rig.
+    const f = window._podFresh[obj.bone] || { fresh: 0, held: 0, lastMs: -1 };
+    if (f.lastMs === obj.millis) { f.held++; obj.held = true; }
+    else { f.fresh++; obj.held = false; }
+    f.lastMs = obj.millis;
+    window._podFresh[obj.bone] = f;
+
+    _MI.onBinaryFrame();                       // I6
+    _MI.onPacket(obj.bone, obj.count);         // I5: sequence-gap detection
+    _dispatch(obj, false);
+  },
+  onJsonObject(j) {
+    window._rxLines++;
+    window._rxMode.json++;
+    _MI.onJsonLine();                          // I6
+    if (j.bone) window._podRx[j.bone] = (window._podRx[j.bone] || 0) + 1;
+    _dispatch(j, true);
+  },
+  onStatusLine(txt) {
+    window._hubStatus.push({ t: Date.now(), line: txt });
+    if (window._hubStatus.length > 120) window._hubStatus.shift();
+  },
+  onDrop(reason, n) {
+    window._parserDrops = window._parserDrops || {};
+    window._parserDrops[reason] = (window._parserDrops[reason] || 0) + n;
+    // Surface the first occurrence of each reason -- these used to be silent.
+    window._parserDropSeen = window._parserDropSeen || {};
+    if (!window._parserDropSeen[reason]) {
+      window._parserDropSeen[reason] = true;
+      console.warn('[mocap] parser recovered from "' + reason + '" (' + n + ' bytes). '
+        + 'This is the WEB-02/HUB-02 path; see window._parserDrops.');
+    }
+  }
+});
+window._parser = _parser;
 
 // One-call diagnostic. Paste `_mocapDebug()` in DevTools to see the full
-// pipeline state: how many bytes arrived, how many lines, how many parsed,
-// what the most recent bad line looked like, per-bone counts, last 200 chars.
+// pipeline state.
 window._mocapDebug = function () {
+  const st = _parser.stats;
   const out = {
     bytesReceived:   window._rxBytes,
     linesReceived:   window._rxLines || 0,
     jsonParsedOK:    window._rxMode.json,
     binaryFramesOK:  window._rxMode.binary,
-    parseFailures:   window._jsonParseErr || 0,
-    lastBadLineRaw:  window._lastBadLine || '(none)',
-    lastBadLineFix:  window._lastBadLineRepaired || '(none)',
+    parseFailures:   st.jsonParseErr,
+    nanFramesDropped: st.nanFrames,
+    falseSync:       st.falseSync,
+    jsonInterleave:  st.jsonInterleave,
+    jsonOverflow:    st.jsonOverflow,
+    jsonStall:       st.jsonStall,
+    bufOverflowBytes: st.bufOverflow,
+    pendingBytes:    _parser.pending(),
+    lastBadLineRaw:  st.lastBadLine || '(none)',
+    lastBadLineFix:  st.lastBadLineRepaired || '(none)',
     perBone:         Object.assign({}, window._podRx),
     perBoneId:       Object.assign({}, window._podRxByteId),
+    freshness:       Object.assign({}, window._podFresh),
     handlerErrors:   Object.assign({}, window._handleWSErr || {}),
+    hubStatusLast:   (window._hubStatus.slice(-1)[0] || {}).line || '(none)',
     last200chars:    window._rxLast200,
   };
   console.table({
@@ -175,164 +177,17 @@ window._mocapDebug = function () {
     jsonOK: out.jsonParsedOK,
     binOK:  out.binaryFramesOK,
     fails:  out.parseFailures,
+    recovered: st.jsonInterleave + st.jsonOverflow + st.jsonStall,
   });
   console.log(out);
   return out;
 };
 
-// Some firmwares occasionally emit JavaScript-style `nan` / `inf` literals
-// when the IMU's `sqrt(1 - q1^2 - q2^2 - q3^2)` underflows -- those aren't
-// valid JSON so the line is rejected. Map them to `null` (parses cleanly,
-// becomes NaN in JS via parseFloat, which is treated as a dead frame
-// downstream). Word-boundary anchors so `"banana"` strings can't get hit.
-const _NAN_RE = /:\s*-?nan\b/gi;
-const _INF_RE = /:\s*-?inf(?:inity)?\b/gi;
-
-function _repairLegacyJson(line) {
-  // Drop trailing junk after the structural `}` if any (firmware sometimes
-  // appends bytes past the real end of the JSON line).
-  const lastBrace = line.lastIndexOf('}');
-  if (lastBrace >= 0 && lastBrace < line.length - 1) {
-    line = line.slice(0, lastBrace + 1);
-  }
-  // Strip junk between bone-name closing quote and the next , or }.
-  line = line.replace(_BONE_REPAIR_RE, '"bone":"$1"');
-  // Replace JS-style nan/inf with JSON null so JSON.parse accepts the line.
-  // The downstream rig already tolerates a NaN quaternion component (the
-  // adaptive slerp stays at the previous state for that frame).
-  line = line.replace(_NAN_RE, ':null');
-  line = line.replace(_INF_RE, ':null');
-  return line;
-}
-
-function _appendBytes(chunk) {
-  const out = new Uint8Array(_rxBuf.length + chunk.length);
-  out.set(_rxBuf, 0);
-  out.set(chunk, _rxBuf.length);
-  _rxBuf = out;
-}
-
 function feedSerialBytes(chunk) {
   window._rxBytes += chunk.length;
   _MI.onBytes(chunk.length);                       // I6
   _recordTail(chunk);
-  _appendBytes(chunk);
-  let i = 0;
-  while (i < _rxBuf.length) {
-    const b = _rxBuf[i];
-
-    // -- Branch A: binary pod frame --
-    if (b === SYNC0 && _jsonLine.length === 0) {
-      if (_rxBuf.length - i < 2) break;          // need next sync byte
-      if (_rxBuf[i + 1] !== SYNC1) {              // false positive, skip 1
-        i += 1;
-        continue;
-      }
-      // -- Branch A2: framed hub status (Phase 2 instrumentation) --
-      if (_rxBuf.length - i >= 4 && _rxBuf[i + 2] === STATUS_MARKER) {
-        const slen = _rxBuf[i + 3];
-        if (_rxBuf.length - i < 4 + slen) break;   // wait for the whole line
-        let txt = "";
-        for (let k = 0; k < slen; k++) txt += String.fromCharCode(_rxBuf[i + 4 + k]);
-        window._hubStatus.push({ t: Date.now(), line: txt });
-        if (window._hubStatus.length > 120) window._hubStatus.shift();
-        i += 4 + slen;
-        continue;
-      }
-      if (_rxBuf.length - i < POD_PACKET_LEN) break;  // need full frame
-      const obj = unpackPodPacket(_rxBuf.subarray(i, i + POD_PACKET_LEN));
-      if (obj) {
-        window._rxMode.binary++;
-        _MI.onBinaryFrame();                       // I6
-        _MI.onPacket(obj.bone, obj.count);         // I5: sequence-gap detection
-        try {
-          handleWSMessage(obj);
-        } catch (e) {
-          // Don't fully swallow -- log first occurrence per bone so a broken
-          // bone surfaces in DevTools instead of silently going dark. This
-          // is exactly the gap that hid the HipsAlt-not-mapping issue.
-          if (typeof window._handleWSErr === 'undefined') window._handleWSErr = {};
-          if (!window._handleWSErr[obj.bone]) {
-            window._handleWSErr[obj.bone] = true;
-            console.error('[mocap] handleWSMessage threw for bone "' + obj.bone + '":', e);
-          }
-        }
-      }
-      i += POD_PACKET_LEN;
-      continue;
-    }
-
-    // -- Branch B: legacy JSON line (phone Hips path) --
-    if (b === 0x7B /* '{' */ || _jsonLine.length > 0) {
-      _jsonLine += String.fromCharCode(b);
-      _MI.onJsonLineLen(_jsonLine.length);         // I6: WEB-02 smoking gun
-      if (b === 0x0A /* '\n' */) {
-        window._rxLines = (window._rxLines || 0) + 1;
-        // Two-stage parse: try the line as-is; if it fails, run it through
-        // the generalized bone-string repair (which handles Spine/Hips/etc.
-        // String-corruption tails) and try again. Most dongles produce
-        // already-clean lines on the order of >99% of frames, so the cheap
-        // fast path is "JSON.parse and move on".
-        const raw = _jsonLine.trim();
-        _jsonLine = "";
-        let j = null;
-        try {
-          j = JSON.parse(raw);
-        } catch (e1) {
-          const repaired = _repairLegacyJson(raw);
-          try {
-            j = JSON.parse(repaired);
-          } catch (e2) {
-            if (typeof window._jsonParseErr === 'undefined') window._jsonParseErr = 0;
-            // Always record the most recent failure for offline inspection.
-            window._lastBadLine = raw;
-            window._lastBadLineRepaired = repaired;
-            if (window._jsonParseErr++ < 5) {
-              console.warn('[mocap] JSON parse failed twice. raw:', raw,
-                           '| repaired:', repaired, '| err:', e2.message);
-            }
-          }
-        }
-        if (j) {
-          // Drop quaternion frames where any of x/y/z/w is null/NaN. The
-          // _repairLegacyJson step turns firmware-emitted `nan` literals
-          // into JSON null so the line parses, but a NaN quaternion would
-          // propagate through every dot product downstream. Better to
-          // skip the frame -- adaptive slerp keeps the bone at its
-          // previous state, which is what the user wants visually.
-          const _isBadNum = function (v) {
-            return v === null || v === undefined || (typeof v === 'number' && !isFinite(v));
-          };
-          if (_isBadNum(j.x) || _isBadNum(j.y) || _isBadNum(j.z) || _isBadNum(j.w)) {
-            window._nanFrameDropped = (window._nanFrameDropped || 0) + 1;
-            _MI.onNanFrame();                      // I6
-          } else {
-            window._rxMode.json++;
-            _MI.onJsonLine();                      // I6
-            if (j.bone) {
-              window._podRx[j.bone] = (window._podRx[j.bone] || 0) + 1;
-            }
-            try {
-              handleWSMessage(j);
-            } catch (e) {
-              if (typeof window._handleWSErr === 'undefined') window._handleWSErr = {};
-              if (!window._handleWSErr[j.bone]) {
-                window._handleWSErr[j.bone] = true;
-                console.error('[mocap] handleWSMessage threw for JSON bone "' + j.bone + '":', e);
-              }
-            }
-          }
-        }
-      }
-      i += 1;
-      continue;
-    }
-
-    // -- Junk byte (between frames, e.g. a stray newline from old firmware) --
-    i += 1;
-  }
-  // Keep only the unconsumed tail; otherwise _rxBuf grows unbounded.
-  _rxBuf = _rxBuf.subarray(i);
+  _parser.feed(chunk);
 }
 
 async function connectToPort(port) {
@@ -367,10 +222,10 @@ async function connectToPort(port) {
     return;
   }
 
-  // Reset stream state on every fresh connect so a stale partial frame from a
-  // previous session doesn't poison the parser.
-  _rxBuf = new Uint8Array(0);
-  _jsonLine = "";
+  // RECOVERY: reset stream state on every fresh connect so a stale partial
+  // frame from a previous session cannot poison the parser. Covered by
+  // tools/parser_tests.js T14 (disconnect in every parser state).
+  _parser.reset();
 
   while (port && port.readable) {
     const reader = port.readable.getReader();
@@ -409,14 +264,34 @@ function writeToPort(data) {
     return;
   }
   const writer = port.writable.getWriter();
-  const encoder = new TextEncoder();
-  writer.write(encoder.encode(data));
+  // Accept raw bytes as well as text: commands are binary frames now.
+  const bytes = (data instanceof Uint8Array) ? data : new TextEncoder().encode(data);
+  writer.write(bytes);
   writer.releaseLock();
 }
 
 window.sWrite = function (data) {
   writeToPort(data);
 }
+
+// HUB-03: send an explicitly framed, checksummed command.
+//
+// The old call was `window.sWrite("reboot")`. The word never mattered -- the
+// hub reset the fleet on ANY inbound byte, which is why line noise and stray
+// terminal traffic could drop the suit mid-capture. The hub now requires a
+// complete frame, so the browser builds one.
+//
+// COMPATIBILITY: against a hub still running Phase 1 firmware the first byte
+// of this frame triggers the old reset, giving the same result. The browser
+// can therefore be updated before the hubs are.
+window.mesqSendCommand = function (cmd, payload) {
+  writeToPort(MesqParser.encodeCommand(cmd, payload));
+};
+
+// Kept as a named helper so call sites read as intent, not as a magic string.
+window.mesqRebootFleet = function () {
+  window.mesqSendCommand(MesqParser.CMD_RESET_FLEET);
+};
 
 navigator.serial.addEventListener("connect", (e) => {
   console.log("A serial port has been connected to the system: ", e);

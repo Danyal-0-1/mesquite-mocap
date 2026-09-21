@@ -2,7 +2,19 @@
 /* =========================================================================
    MESQUITE PHASE 2 - REPLAY FIXTURE  (system_assessment_2 §4.5)
 
-   Feeds byte streams through the real parser logic from
+   PHASE 3 STATUS -- READ THIS FIRST
+   This file now pins the PHASE 2 BASELINE on purpose. Its parser copy is
+   frozen at the pre-fix algorithm so the WEB-02 / HUB-02 defects stay
+   reproducible as evidence. It is NOT the acceptance suite.
+
+     tools/replay_harness.js -> baseline: the defects, reproduced
+     tools/parser_tests.js   -> acceptance: js/mesq_parser.js, the parser the
+                                browser actually loads
+
+   Section [T10] runs the identical fault bytes through the Phase 3 module so
+   the before/after sits in one output.
+
+   Feeds byte streams through the Phase 2 parser logic from
    js/webserialnative.js without a browser or hardware, so that:
      - I5 sequence-gap arithmetic is verifiable
      - WEB-02 (unterminated JSON latches the parser) reproduces ON DEMAND
@@ -55,7 +67,9 @@ function _append(chunk){
   out.set(_rxBuf,0); out.set(chunk,_rxBuf.length); _rxBuf = out;
 }
 
-// CURRENT behaviour (pre-fix), matching js/webserialnative.js exactly.
+// PHASE 2 behaviour, frozen. js/webserialnative.js no longer looks like
+// this -- it delegates to js/mesq_parser.js. Kept so the defect stays
+// demonstrable side by side with the fix (see T10).
 function feedSerialBytes(chunk){
   MesqInstr.onBytes(chunk.length);
   _append(chunk);
@@ -282,9 +296,45 @@ if (process.argv[2]==='replay'){
 } else {
   console.log('='.repeat(70));
   console.log('MESQUITE REPLAY FIXTURE - parser + I5 verification, no hardware');
+/* =====================================================================
+   [T10] PHASE 3 COMPARISON -- identical fault bytes, shipped parser
+   The two faults above are replayed through js/mesq_parser.js, the module
+   js/webserialnative.js loads in the browser. This is the before/after the
+   change report cites.
+   ===================================================================== */
+function T_phase3(){
+  console.log('\n[T10] Phase 3 module vs the same fault bytes');
+  const MP = require(path.join(__dirname, '..', 'js', 'mesq_parser.js'));
+
+  // --- WEB-02: unterminated JSON, then 50 frames with no 0x0A in payload ---
+  let pods = 0;
+  const p1 = MP.createParser({ onPodFrame: () => pods++ });
+  p1.feed(enc('{"bone":"Hips","x":0.1'));
+  for (let n = 0; n < 50; n++) {
+    p1.feed(MP.encodePodPacket({ id:1, batt:50, x:0, y:0, z:0, w:1,
+                                 count:0x0101, millis:0x0202 }));
+  }
+  check('WEB-02: baseline lost every frame, Phase 3 decodes all 50',
+        pods === 50, 'got ' + pods);
+  check('WEB-02: Phase 3 pending buffer bounded',
+        p1.pending() < MP.MAX_JSON_LINE, p1.pending() + ' B');
+
+  // --- HUB-02: binary frame spliced into the middle of a JSON line ---
+  let pods2 = 0, jsons2 = 0;
+  const p2 = MP.createParser({ onPodFrame: () => pods2++, onJsonObject: () => jsons2++ });
+  p2.feed(enc('{"bone":"Hips","x":0.5,'));
+  p2.feed(MP.encodePodPacket({ id:9, batt:50, x:0, y:0, z:0, w:1, count:42, millis:7 }));
+  p2.feed(enc('"y":0.5,"z":0,"w":1}\n'));
+  check('HUB-02: baseline destroyed both records, Phase 3 keeps the pod frame',
+        pods2 === 1, 'got ' + pods2);
+  check('HUB-02: the corrupted JSON line is still discarded, not mis-parsed',
+        jsons2 === 0, 'got ' + jsons2);
+}
+
   console.log('='.repeat(70));
   T_basic(); T_chunk_split(); T_loss(); T_wrap(); T_reboot();
   T_web02(); T_hub02(); T_status(); T_falsesync();
+  T_phase3();
   console.log('\n' + '='.repeat(70));
   console.log('pass=' + pass + '  fail=' + fail);
   console.log('='.repeat(70));
