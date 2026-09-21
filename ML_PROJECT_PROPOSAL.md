@@ -283,12 +283,35 @@ evidence.
 | Choice | Why |
 |---|---|
 | **Graph encoder over skeleton adjacency** | A forearm's heading error is constrained by its upper arm and hand, not by the opposite foot. Restricting message passing to anatomical edges encodes that and keeps the model small. Ablation: remove edges → dense layer. |
-| **Bidirectional GRU, ~2 s window** | The grading target is offline, so future context is free and helps enormously — a heading error only becomes observable once the segment moves. Ablation: causal GRU for the real-time stretch goal. |
+| **Causal TCN, not a bidirectional RNN** | **The system must correct heading while it is running.** A bidirectional model has to see the future, which means waiting. Dilated causal convolutions give a long receptive field with **zero lookahead** and cheap streaming inference from a ring buffer. |
+| **A filter, not a direct per-frame prediction** | The 14 offsets are a **slow, low-dimensional state**, which is exactly what a filter is for — and gyro drift *is* a random walk, so that is the process model rather than an assumption. Temporal smoothness comes from physics instead of a tuned loss term. |
 | **6D rotation representation** [15] | Quaternions and Euler angles are discontinuous as network outputs; 6D is continuous and trains far more stably. Loss and metrics are still computed on SO(3). |
 | **`(sin δψ, cos δψ)` output** | Avoids the wrap discontinuity at ±π. Recover `δψ = atan2(sin, cos)`. |
 | **Gravity-axis-only correction** | A rotation about ĝ **provably cannot corrupt roll or pitch**, which are already correct. The model can only touch the broken degree of freedom. |
-| **~200k parameters** | Deliberately light. It must run on a laptop in the offline pipeline and be plausible on-device later. This is a *residual* correction with strong physical structure supplied for free — a large model is not the point and would overfit a small real dataset. |
+| **~150k parameters** | It produces only a *measurement*; the filter does the tracking. Physics, skeleton and the phone anchor are supplied for free, so a large model would mostly memorise a small real dataset. One forward pass per frame, well under a millisecond. |
 | **PyTorch + PyTorch Geometric** | Standard, and differentiable FK is straightforward to write directly in PyTorch. |
+
+### Why this runs while the system is operating
+
+The requirement is to correct heading **during** a capture, not afterwards. That constraint decides
+the architecture, and it is met because the two quantities move at completely different rates:
+
+| | Changes at | Therefore |
+|---|---|---|
+| The **pose** | ~32 Hz | must never be delayed — it passes straight through |
+| The **heading error** | order of a degree **per minute** | can be estimated slowly and held in a filter |
+
+A correction computed from data one second old is stale by roughly **0.02°**. Against the tens of
+degrees being removed, that is negligible. So the slow estimation path is allowed to lag while the
+fast pose path never waits for it — the same two-rate separation used in inertial navigation, where
+high-rate integration runs continuously and a slowly-updated bias estimate corrects it.
+
+Every component is causal. Stage 1, the phone anchor, is a coordinate transform and is real-time
+regardless.
+
+**The bidirectional variant is still trained**, but as an *offline ceiling* on the same data. The gap
+between it and the causal model measures what causality costs, rather than leaving it as an
+assumption.
 
 ### Loss
 
@@ -299,8 +322,10 @@ L = λ_R · L_SO3  +  λ_FK · L_FK  +  λ_U · L_NLL  +  λ_S · L_smooth
 with geodesic rotation distance `d(R, R̂) = arccos( clip( (tr(Rᵀ R̂) − 1)/2, −1, 1 ) )`.
 `L_FK` penalizes joint *position* error after differentiable forward kinematics — because a small
 heading error at the pelvis becomes a large position error at the hand, which is what actually
-matters. `L_NLL = e²·exp(−s) + s` trains mean and variance jointly [13]. `L_smooth` limits how fast
-the *correction* changes, not how fast the body moves.
+matters. `L_NLL = e²·exp(−s) + s` trains the measurement head's mean and variance jointly [13]; the predicted
+σ² then serves as the measurement noise **R** in the filter, so an unreliable frame simply does not
+move the estimate — no hand-tuned gating rule. `L_SO3` and `L_FK` are computed on the **filtered**
+output, so the network is trained through the filter rather than against it.
 
 ### On "reinforcement learning" — an honest recommendation
 

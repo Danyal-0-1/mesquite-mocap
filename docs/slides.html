@@ -477,7 +477,7 @@
 <!-- ARCHITECTURE -->
 <div class="slide">
   <h2>The model</h2>
-  <div class="figwrap"><svg viewBox="0 0 1240 430" preserveAspectRatio="xMidYMid meet" font-family="Helvetica,Arial,sans-serif">
+  <div class="figwrap"><svg viewBox="0 0 1300 450" preserveAspectRatio="xMidYMid meet" font-family="Helvetica,Arial,sans-serif">
   <defs>
     <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
       <path d="M0,0 L10,5 L0,10 z" fill="#5a6572"/>
@@ -489,106 +489,137 @@
   <style>
     .bx { fill:#fff; stroke:#9aa5b1; stroke-width:2; rx:10 }
     .ml { fill:#f7f5ff; stroke:#6a4fb0; stroke-width:2.5; rx:10 }
-    .hd { font-size:19px; font-weight:700; fill:#16181d }
-    .tx { font-size:15px; fill:#4a525c }
-    .sm { font-size:13px; fill:#8a929c }
+    .fi { fill:#fff8ec; stroke:#b07d28; stroke-width:2.5; rx:10 }
+    .hd { font-size:18px; font-weight:700; fill:#16181d }
+    .tx { font-size:14px; fill:#4a525c }
+    .sm { font-size:12.5px; fill:#8a929c }
     .fl { stroke:#5a6572; stroke-width:2.2; fill:none; marker-end:url(#ar) }
   </style>
 
   <!-- 1 INPUT -->
-  <rect class="bx" x="12" y="60" width="236" height="230"/>
-  <text class="hd" x="30" y="92">Inputs, per frame</text>
-  <text class="tx" x="30" y="124">15 segment orientations</text>
-  <text class="sm" x="30" y="143">already anchored by the phone, 6D</text>
-  <text class="tx" x="30" y="172">phone pose and its change</text>
-  <text class="tx" x="30" y="200">phone tracking state</text>
-  <text class="sm" x="30" y="219">how much to trust the anchor</text>
-  <text class="tx" x="30" y="248">&#916;t and validity mask</text>
-  <text class="sm" x="30" y="267">which samples are real, not held</text>
+  <rect class="bx" x="10" y="58" width="196" height="242"/>
+  <text class="hd" x="26" y="88">Inputs, per frame</text>
+  <text class="tx" x="26" y="120">15 orientations,</text>
+  <text class="tx" x="26" y="138">anchored by the phone</text>
+  <text class="tx" x="26" y="170">phone pose + its</text>
+  <text class="tx" x="26" y="188">tracking state</text>
+  <text class="tx" x="26" y="220">&#916;t, validity mask</text>
+  <text class="sm" x="26" y="254">only PAST frames &#8212;</text>
+  <text class="sm" x="26" y="272">nothing waits on the future</text>
 
-  <!-- 2 GRAPH ENCODER -->
-  <rect class="ml" x="286" y="60" width="214" height="230"/>
-  <text class="hd" x="304" y="92">Graph encoder</text>
-  <text class="sm" x="304" y="112">messages follow the skeleton</text>
-  <g stroke="#6a4fb0" stroke-width="2.4">
-    <line x1="393" y1="140" x2="393" y2="196"/>
-    <line x1="393" y1="156" x2="352" y2="184"/>
-    <line x1="352" y1="184" x2="342" y2="224"/>
-    <line x1="393" y1="156" x2="434" y2="184"/>
-    <line x1="434" y1="184" x2="444" y2="224"/>
-    <line x1="393" y1="196" x2="368" y2="242"/>
-    <line x1="368" y1="242" x2="364" y2="276"/>
-    <line x1="393" y1="196" x2="418" y2="242"/>
-    <line x1="418" y1="242" x2="422" y2="276"/>
+  <!-- 2 GRAPH -->
+  <rect class="ml" x="234" y="58" width="176" height="242"/>
+  <text class="hd" x="250" y="88">Graph encoder</text>
+  <text class="sm" x="250" y="108">along the skeleton only</text>
+  <g stroke="#6a4fb0" stroke-width="2.2">
+    <line x1="322" y1="142" x2="322" y2="196"/>
+    <line x1="322" y1="156" x2="288" y2="182"/><line x1="288" y1="182" x2="280" y2="218"/>
+    <line x1="322" y1="156" x2="356" y2="182"/><line x1="356" y1="182" x2="364" y2="218"/>
+    <line x1="322" y1="196" x2="302" y2="238"/><line x1="302" y1="238" x2="299" y2="270"/>
+    <line x1="322" y1="196" x2="342" y2="238"/><line x1="342" y1="238" x2="345" y2="270"/>
   </g>
   <g fill="#6a4fb0">
-    <circle cx="393" cy="134" r="7"/><circle cx="393" cy="196" r="7"/>
-    <circle cx="352" cy="184" r="7"/><circle cx="342" cy="224" r="7"/>
-    <circle cx="434" cy="184" r="7"/><circle cx="444" cy="224" r="7"/>
-    <circle cx="368" cy="242" r="7"/><circle cx="364" cy="276" r="7"/>
-    <circle cx="418" cy="242" r="7"/><circle cx="422" cy="276" r="7"/>
+    <circle cx="322" cy="136" r="6"/><circle cx="322" cy="196" r="6"/>
+    <circle cx="288" cy="182" r="6"/><circle cx="280" cy="218" r="6"/>
+    <circle cx="356" cy="182" r="6"/><circle cx="364" cy="218" r="6"/>
+    <circle cx="302" cy="238" r="6"/><circle cx="299" cy="270" r="6"/>
+    <circle cx="342" cy="238" r="6"/><circle cx="345" cy="270" r="6"/>
   </g>
-  <line x1="434" y1="184" x2="442" y2="216" stroke="#6a4fb0" stroke-width="2.4" marker-end="url(#arw)"/>
-  <line x1="352" y1="184" x2="344" y2="216" stroke="#6a4fb0" stroke-width="2.4" marker-end="url(#arw)"/>
 
-  <!-- 3 BiGRU -->
-  <rect class="ml" x="538" y="60" width="244" height="230"/>
-  <text class="hd" x="556" y="92">Bidirectional GRU</text>
-  <text class="sm" x="556" y="112">a ~2 second window</text>
-  <g>
-    <rect x="558" y="150" width="40" height="46" rx="6" fill="#fff" stroke="#6a4fb0" stroke-width="2"/>
-    <rect x="612" y="150" width="40" height="46" rx="6" fill="#fff" stroke="#6a4fb0" stroke-width="2"/>
-    <rect x="666" y="150" width="40" height="46" rx="6" fill="#fff" stroke="#6a4fb0" stroke-width="2"/>
-    <rect x="720" y="150" width="40" height="46" rx="6" fill="#fff" stroke="#6a4fb0" stroke-width="2"/>
+  <!-- 3 CAUSAL TCN -->
+  <rect class="ml" x="438" y="58" width="236" height="242"/>
+  <text class="hd" x="454" y="88">Causal TCN</text>
+  <text class="sm" x="454" y="108">dilated, past-only</text>
+  <g fill="#6a4fb0">
+    <circle cx="470" cy="160" r="5"/><circle cx="500" cy="160" r="5"/><circle cx="530" cy="160" r="5"/>
+    <circle cx="560" cy="160" r="5"/><circle cx="590" cy="160" r="5"/><circle cx="620" cy="160" r="5"/>
+    <circle cx="650" cy="160" r="6.5"/>
+    <circle cx="500" cy="204" r="5"/><circle cx="560" cy="204" r="5"/><circle cx="650" cy="204" r="6.5"/>
   </g>
-  <g stroke="#6a4fb0" stroke-width="2" fill="none">
-    <line x1="598" y1="163" x2="608" y2="163" marker-end="url(#arw)"/>
-    <line x1="652" y1="163" x2="662" y2="163" marker-end="url(#arw)"/>
-    <line x1="706" y1="163" x2="716" y2="163" marker-end="url(#arw)"/>
-    <line x1="720" y1="185" x2="710" y2="185" marker-end="url(#arw)"/>
-    <line x1="666" y1="185" x2="656" y2="185" marker-end="url(#arw)"/>
-    <line x1="612" y1="185" x2="602" y2="185" marker-end="url(#arw)"/>
+  <g stroke="#6a4fb0" stroke-width="1.7" fill="none" opacity="0.85">
+    <line x1="470" y1="160" x2="498" y2="200"/><line x1="500" y1="160" x2="500" y2="198"/>
+    <line x1="530" y1="160" x2="558" y2="200"/><line x1="560" y1="160" x2="560" y2="198"/>
+    <line x1="590" y1="160" x2="646" y2="200"/><line x1="650" y1="160" x2="650" y2="198"/>
+    <line x1="500" y1="204" x2="644" y2="216" opacity="0.5"/>
+    <line x1="560" y1="204" x2="646" y2="214" opacity="0.5"/>
   </g>
-  <text class="sm" x="556" y="224">past and future both help &#8212; an error</text>
-  <text class="sm" x="556" y="242">only shows up once the limb moves,</text>
-  <text class="sm" x="556" y="260">so the project is offline by choice</text>
+  <text class="sm" x="454" y="142">past</text>
+  <text class="sm" x="630" y="142">now</text>
+  <text class="tx" x="454" y="248">Every edge points forward</text>
+  <text class="tx" x="454" y="266">in time. The output for now</text>
+  <text class="tx" x="454" y="284">needs no future frame.</text>
 
-  <!-- 4 HEADS -->
-  <rect class="ml" x="820" y="60" width="200" height="230"/>
-  <text class="hd" x="838" y="92">Per-segment head</text>
-  <text class="sm" x="838" y="112">14 of them, root excluded</text>
-  <text class="tx" x="838" y="152">sin &#948;&#968;,&#160; cos &#948;&#968;</text>
-  <text class="sm" x="838" y="171">the heading correction</text>
-  <text class="tx" x="838" y="206">log &#963;&#178;</text>
-  <text class="sm" x="838" y="225">how sure it is</text>
-  <text class="sm" x="838" y="262">circular output, so there is no</text>
-  <text class="sm" x="838" y="278">jump at &#177;180&#176;</text>
+  <!-- 4 MEASUREMENT HEAD -->
+  <rect class="ml" x="702" y="58" width="188" height="242"/>
+  <text class="hd" x="718" y="88">Measurement head</text>
+  <text class="sm" x="718" y="108">14 segments, root excluded</text>
+  <text class="tx" x="718" y="146">z&#7522; &#8212; &#8220;this segment</text>
+  <text class="tx" x="718" y="164">looks off by...&#8221;</text>
+  <text class="tx" x="718" y="198">&#963;&#7522; &#8212; how much to</text>
+  <text class="tx" x="718" y="216">believe that</text>
+  <text class="sm" x="718" y="250">an OBSERVATION,</text>
+  <text class="sm" x="718" y="268">not the answer</text>
 
-  <!-- 5 OUTPUT -->
-  <rect class="bx" x="1058" y="60" width="170" height="230"/>
-  <text class="hd" x="1076" y="92">Applied</text>
-  <text class="tx" x="1076" y="128">rotate about</text>
-  <text class="tx" x="1076" y="148">gravity only</text>
-  <text class="sm" x="1076" y="170">roll and pitch cannot</text>
-  <text class="sm" x="1076" y="186">be damaged</text>
-  <text class="tx" x="1076" y="222">forward</text>
-  <text class="tx" x="1076" y="242">kinematics</text>
-  <text class="sm" x="1076" y="264">global skeleton</text>
+  <!-- 5 FILTER -->
+  <rect class="fi" x="918" y="58" width="196" height="242"/>
+  <text class="hd" x="934" y="88">14 scalar filters</text>
+  <text class="sm" x="934" y="108">one per segment</text>
+  <path d="M938,196 C970,192 990,186 1010,176 S1060,150 1098,142"
+        fill="none" stroke="#b07d28" stroke-width="3"/>
+  <g fill="#b07d28" opacity="0.55">
+    <circle cx="960" cy="204" r="3.5"/><circle cx="986" cy="172" r="3.5"/>
+    <circle cx="1012" cy="196" r="3.5"/><circle cx="1040" cy="150" r="3.5"/>
+    <circle cx="1068" cy="172" r="3.5"/><circle cx="1094" cy="128" r="3.5"/>
+  </g>
+  <text class="sm" x="934" y="236">dots = noisy measurements</text>
+  <text class="sm" x="934" y="254">line = the drift estimate</text>
+  <text class="sm" x="934" y="272">bad &#963; &#8594; simply do not update</text>
 
-  <!-- flows -->
-  <path class="fl" d="M250,175 L284,175"/>
-  <path class="fl" d="M502,175 L536,175"/>
-  <path class="fl" d="M784,175 L818,175"/>
-  <path class="fl" d="M1022,175 L1056,175"/>
+  <!-- 6 APPLIED -->
+  <rect class="bx" x="1142" y="58" width="148" height="242"/>
+  <text class="hd" x="1158" y="88">Applied</text>
+  <text class="tx" x="1158" y="124">rotate about</text>
+  <text class="tx" x="1158" y="142">gravity only</text>
+  <text class="sm" x="1158" y="164">roll and pitch are</text>
+  <text class="sm" x="1158" y="180">untouchable</text>
+  <text class="tx" x="1158" y="214">forward</text>
+  <text class="tx" x="1158" y="232">kinematics</text>
+  <text class="sm" x="1158" y="256">live skeleton</text>
 
-  <!-- footer -->
-  <rect class="bx" x="12" y="322" width="1216" height="90"/>
-  <text class="hd" x="34" y="354">About 200,000 parameters &#8212; small on purpose</text>
-  <text class="tx" x="34" y="382">It predicts only a RESIDUAL. The physics, the skeleton and the phone anchor are all given to it for free,</text>
-  <text class="tx" x="34" y="402">so there is little left to learn. The root correction is fixed at zero: the phone owns the root.</text>
+  <path class="fl" d="M208,175 L232,175"/>
+  <path class="fl" d="M412,175 L436,175"/>
+  <path class="fl" d="M676,175 L700,175"/>
+  <path class="fl" d="M892,175 L916,175"/>
+  <path class="fl" d="M1116,175 L1140,175"/>
+
+  <rect class="bx" x="10" y="330" width="1280" height="106"/>
+  <text class="hd" x="32" y="362">Causal end to end &#8212; it runs while the suit is in use</text>
+  <text class="tx" x="32" y="390">Two timescales. The pose moves at 32 Hz; the heading error creeps at a degree or so per minute.</text>
+  <text class="tx" x="32" y="410">The filter holds that slow state, so the fast pose path never waits for anything.</text>
+  <text class="tx" x="32" y="430">Roughly 150k parameters, one forward pass per frame, well under a millisecond.</text>
 </svg></div>
-  <div class="credit">Diagram of this project's own architecture.</div>
   <div class="num">19</div>
+</div>
+
+<!-- RUNNING LIVE -->
+<div class="slide">
+  <h2>Why this can run while the suit is in use</h2>
+  <p class="lead" style="margin-bottom:0.22in;">Because the two things move at completely different speeds.</p>
+  <table style="font-size:15pt;">
+    <tr><th style="width:26%"></th><th style="width:26%">Changes how fast</th><th>So it must be</th></tr>
+    <tr><td><b>The pose</b></td><td>32 times a second</td><td><b>Never delayed.</b> Straight through, no waiting.</td></tr>
+    <tr><td><b>The heading error</b></td><td>a degree or so <b>per minute</b></td><td>Estimated slowly and held in a filter.</td></tr>
+  </table>
+  <p class="therefore" style="font-size:15.5pt; margin-top:0.24in;">
+    A heading correction computed from a second ago is stale by about <b>0.02&#176;</b>. Next to the
+    tens of degrees we are removing, that is nothing. So the slow path can lag and the fast path
+    never has to.
+  </p>
+  <p style="margin-top:0.2in; font-size:15pt;">
+    Everything is <b>causal</b> &#8212; no part of it waits for a future frame. Stage 1, the phone
+    anchor, is just a coordinate transform, so that half is real-time no matter what.
+  </p>
+  <div class="num">20</div>
 </div>
 
 <!-- WHY THIS MODEL -->
@@ -597,12 +628,13 @@
   <table style="font-size:14.5pt;">
     <tr><th style="width:30%">Choice</th><th>Reason</th></tr>
     <tr><td><b>Graph over the skeleton</b></td><td>A forearm's error is constrained by its upper arm and hand — <b>not</b> by the opposite foot. Restricting messages to real joints encodes anatomy and keeps the model small.</td></tr>
-    <tr><td><b>Bidirectional, ~2 s window</b></td><td>A heading error is <b>invisible until the limb moves</b>. Offline, so future context is free.</td></tr>
+    <tr><td><b>Causal TCN, not a bidirectional RNN</b></td><td>The system has to work <b>while it is running</b>. A bidirectional model must see the future, which means waiting. Dilated causal convolutions give a long memory with <b>zero lookahead</b>, and run with a ring buffer.</td></tr>
+    <tr><td><b>A filter, not a direct prediction</b></td><td>The 14 offsets are a <b>slow, low-dimensional state</b> — exactly what a filter is for. Drift is a random walk, which is the filter's process model. Smoothness comes from the physics, not a tuned loss term.</td></tr>
     <tr><td><b>Rotation about gravity only</b></td><td>It <b>structurally cannot</b> damage roll and pitch, which gravity already got right.</td></tr>
-    <tr><td><b>It predicts confidence</b></td><td>Standing still, the answer genuinely is not knowable. The model must be able to say so instead of inventing one.</td></tr>
-    <tr><td><b>~200k parameters</b></td><td>It corrects a <b>residual</b>, with physics and the phone anchor handed to it for free. A large model would mostly memorise a small real dataset.</td></tr>
+    <tr><td><b>It predicts confidence</b></td><td>Standing still, the answer genuinely is not knowable. Feeding &#963; to the filter as measurement noise means an unreliable frame simply <b>does not move the estimate</b> — no gating rule to hand-tune.</td></tr>
+    <tr><td><b>~150k parameters</b></td><td>It only produces a <b>measurement</b>; the filter does the tracking. Physics, skeleton and the phone anchor are handed to it for free, so a large model would mostly memorise a small real dataset.</td></tr>
   </table>
-  <div class="num">20</div>
+  <div class="num">21</div>
 </div>
 
 <!-- 12 RL -->
@@ -622,7 +654,7 @@
       is a genuine sequential decision. Small, and a fair stretch goal.</p>
     </div>
   </div>
-  <div class="num">21</div>
+  <div class="num">22</div>
 </div>
 
 <!-- 13 EVALUATION -->
@@ -647,7 +679,7 @@
       </ul>
     </div>
   </div>
-  <div class="num">22</div>
+  <div class="num">23</div>
 </div>
 
 <!-- 14 TIMELINE -->
@@ -667,7 +699,7 @@
     The risky weeks are <b>first</b>, on purpose. If the phone doesn't send what we need,
     I want to know in week 1 — not week 7.
   </p>
-  <div class="num">23</div>
+  <div class="num">24</div>
 </div>
 
 <!-- 15 RISK -->
@@ -682,7 +714,7 @@
     The gate is in <b>week 3</b> so there is time to pivot — to packet-loss reconstruction
     or tracking-quality prediction, on the same data.
   </p>
-  <div class="num">24</div>
+  <div class="num">25</div>
 </div>
 
 <!-- 16 CONTRIBUTION -->
@@ -697,7 +729,7 @@
   <p class="lead" style="margin-top:0.3in;">
     <em class="hl">The project is useful whichever way the hypothesis falls.</em>
   </p>
-  <div class="num">25</div>
+  <div class="num">26</div>
 </div>
 
 <!-- IMAGE CREDITS -->
@@ -715,14 +747,14 @@
     additionally requires share-alike, and vendor screenshots are usually not licensed for reuse. A
     screenshot from our own app avoids the question entirely.
   </p>
-  <div class="num">26</div>
+  <div class="num">27</div>
 </div>
 
 <!-- 17 END -->
 <div class="slide center">
   <h1 style="font-size:40pt;">Thank you</h1>
   <p class="lead" style="margin-top:0.3in; color:#4a525c;">Questions</p>
-  <div class="num">27</div>
+  <div class="num">28</div>
 </div>
 
 </body>

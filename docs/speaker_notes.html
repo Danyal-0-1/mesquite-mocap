@@ -41,7 +41,7 @@
 <body>
 
 <h1>Speaker notes</h1>
-<div class="sub">Root-Anchored Yaw Correction — project proposal · 27 slides · about 21 minutes</div>
+<div class="sub">Root-Anchored Yaw Correction — project proposal · 28 slides · about 22 minutes</div>
 
 <div class="intro">
   <p><b>How to use this.</b> The <span style="color:#1f7a3d;font-weight:700">green</span> block is what to
@@ -49,7 +49,7 @@
   <span style="color:#3d6fb4;font-weight:700">blue</span> block is the precise version: use it if your
   audience is technical, or hold it for questions. The
   <span style="color:#b07d28;font-weight:700">amber</span> block is a question you should expect.</p>
-  <p><b>If you are short on time</b>, the six slides that carry the argument are <b>4 (why yaw)</b>, <b>6 (the finding)</b>, <b>9 (position vs heading)</b>, <b>12 (how it reaches the sensors)</b>, <b>16 (the method)</b> and <b>19 (the model)</b>. Slides 7&#8211;9 are the phone explanation &#8212; compress them into one if pushed.</p>
+  <p><b>If you are short on time</b>, the six slides that carry the argument are <b>4 (why yaw)</b>, <b>6 (the finding)</b>, <b>9 (position vs heading)</b>, <b>12 (how it reaches the sensors)</b>, <b>16 (the method)</b> and <b>19&#8211;20 (the model, and why it runs live)</b>. Slides 7&#8211;9 are the phone explanation &#8212; compress them into one if pushed.</p>
   <p><b>The one sentence to land:</b> the phone already knows which way the body is facing, the system
   currently ignores it, and once you fix that the remaining error is a genuine learning problem.</p>
 </div>
@@ -352,25 +352,82 @@
 <div class="slide">
   <div class="hdr"><span class="badge">19</span><span class="title">The model</span><span class="time">~85 s — walk the diagram left to right</span></div>
   <div class="block simple"><div class="lbl">Say it simply</div>
-  <p>"Left to right. <b>Inputs</b>: the fifteen orientations after the phone has anchored them, the phone's own pose and how much it trusts itself, the time step, and a flag for which samples are real rather than repeated. <b>Graph encoder</b>: each sensor only exchanges information with its neighbours on the body — that little skeleton in the box is literally the message-passing structure. <b>Bidirectional GRU</b>: about two seconds at a time, looking both backwards and forwards. <b>Head</b>: for each of the fourteen non-root sensors it outputs a heading correction and a confidence. <b>Applied</b>: the correction is a rotation about gravity only, then forward kinematics gives the final skeleton." <span class="pause">pause</span> "Two hundred thousand parameters. Tiny — and that's deliberate, which is the next slide."</p></div>
+  <p>"Left to right. <b>Inputs</b>: the fifteen orientations after the phone has anchored them, the
+ phone's pose and how much it trusts itself, and a flag for which samples are real rather than
+ repeated &mdash; and note, <i>only past frames</i>. <b>Graph encoder</b>: each sensor only talks to its
+ neighbours on the body. <b>Causal TCN</b>: every connection points forward in time, so the output for
+ <i>now</i> needs no future frame. <b>Measurement head</b>: for each of the fourteen non-root sensors
+ it says &lsquo;this one looks off by about this much, and here is how sure I am&rsquo;. That is an
+ <i>observation</i>, not the final answer. <b>Then a filter</b> &mdash; fourteen little ones, one per
+ segment &mdash; turns that stream of noisy observations into a steady estimate of the drift.
+ <b>Applied</b>: a rotation about gravity, then forward kinematics." <span class="pause">pause</span>
+ "About a hundred and fifty thousand parameters. One forward pass per frame, well under a millisecond." </p></div>
   <div class="block tech"><div class="lbl">Technical</div>
-  <p>Rotations enter as 6D representation (Zhou, CVPR 2019); the head emits (sin δψ, cos δψ, log σ²) per segment, with the root residual fixed at zero. Loss: geodesic SO(3) + differentiable-FK joint position + Gaussian NLL + a smoothness term on the correction rather than the motion. The phone's tracking state is a model <i>input</i>, not just a preprocessing filter — it conditions whether residual implausibility is attributable to the limbs at all.</p></div>
+  <p>Graph encoder over skeleton adjacency; dilated causal temporal convolutions give a long receptive
+ field with zero lookahead and cheap streaming inference from a ring buffer. The head emits a
+ measurement z&#7522; and log-variance per segment; &#963;&#178; becomes the measurement noise R in 14
+ scalar Kalman filters whose process model is the random walk that gyro drift actually is. Root state
+ fixed at zero. Losses: geodesic SO(3) and differentiable-FK joint position on the filtered output,
+ plus Gaussian NLL on the measurement head.</p></div>
+  <div class="block ask"><div class="lbl">Expect</div>
+  <p><b>"Why a filter rather than letting the network output the correction directly?"</b> &mdash;
+ Because the thing being estimated is a slow, low-dimensional state, which is exactly what filters are
+ for. Temporal smoothness then comes from physics instead of a tuned loss term, and &#963; gets a real
+ job instead of an ad-hoc gating rule.</p></div>
 </div>
 
 <!-- 20 -->
 <div class="slide">
-  <div class="hdr"><span class="badge">20</span><span class="title">Why this model, and not a bigger one</span><span class="time">~65 s</span></div>
+  <div class="hdr"><span class="badge">20</span><span class="title">Why this can run while the suit is in use</span><span class="time">~60 s</span></div>
   <div class="block simple"><div class="lbl">Say it simply</div>
-  <p>"Why these choices. <b>A graph over the skeleton</b>, because a forearm's error is constrained by its upper arm and hand — not by the opposite foot. <b>Bidirectional</b>, because a heading error is invisible until that limb moves, and since we're offline, looking ahead is free. <b>Rotation about gravity only</b>, so it structurally cannot damage the roll and pitch that gravity already got right. <b>It predicts confidence</b>, because standing still the answer genuinely isn't knowable and the model has to be able to say so. And <b>small</b>, because it's only correcting a residual — the physics, the skeleton and the phone anchor are all handed to it for free, so there isn't much left to learn. A big model would mostly memorise a small real dataset."</p></div>
+  <p>"This is worth being explicit about, because it decides whether the architecture is right at all.
+ The system has to fix heading <i>while it is running</i>, not afterwards. And that is possible because
+ the two things move at completely different speeds. The <b>pose</b> changes thirty-two times a second,
+ so it can never be delayed &mdash; it goes straight through. The <b>heading error</b> creeps at maybe a
+ degree a minute." <span class="pause">pause</span> "So do the arithmetic: a correction worked out from
+ a second ago is stale by about two hundredths of a degree. Next to the tens of degrees we are removing,
+ that is nothing. The slow path is allowed to lag, and the fast path never waits for it. And Stage 1,
+ the phone anchor, is just a coordinate transform &mdash; so that half is real-time regardless." </p></div>
   <div class="block tech"><div class="lbl">Technical</div>
-  <p>Ablations are specified for each: remove graph edges (dense), remove temporal context (per-frame), remove uncertainty gating, remove the phone as an input, and an independent per-sensor BiGRU at matched parameter count. That last one isolates how much the skeletal structure is worth versus model capacity.</p></div>
+  <p>Two-rate design. The correction is applied at full frame rate from the filter's current state; the
+ measurement network runs causally and updates that state. Added latency in the pose path is one
+ forward pass plus a scalar filter update. This is the same separation used in inertial navigation,
+ where a high-rate integration runs continuously and a slowly-updated bias estimate corrects it.</p></div>
   <div class="block ask"><div class="lbl">Expect</div>
-  <p><b>"Why not a transformer?"</b> — Nothing to gain. The inductive bias we want (anatomy, locality, short horizon) is exactly what the graph and the GRU already give, and the real dataset is small.</p></div>
+  <p><b>"What did you give up by not using a bidirectional model?"</b> &mdash; We measure it. The
+ bidirectional version is trained as an <i>offline ceiling</i> on the same data, and the gap between it
+ and the causal model is a reportable result rather than a hidden assumption.
+ <i>Say this &mdash; it turns a limitation into an experiment.</i></p></div>
 </div>
 
 <!-- 21 -->
 <div class="slide">
-  <div class="hdr"><span class="badge">21</span><span class="title">On reinforcement learning</span><span class="time">~60 s</span></div>
+  <div class="hdr"><span class="badge">21</span><span class="title">Why this model, and not a bigger one</span><span class="time">~70 s</span></div>
+  <div class="block simple"><div class="lbl">Say it simply</div>
+  <p>"Why these choices, one at a time. <b>A graph over the skeleton</b>, because a forearm's error is
+ constrained by its upper arm and hand, not by the opposite foot. <b>A causal network rather than a
+ bidirectional one</b> &mdash; this is the important one: the system has to work while it is running,
+ and a bidirectional model has to see the future, which means waiting. Dilated causal convolutions give
+ a long memory with no lookahead at all. <b>A filter rather than a direct prediction</b>, because the
+ fourteen offsets are a slow, low-dimensional state and drift is literally a random walk, which is the
+ filter's process model. <b>Rotation about gravity only</b>, so it structurally cannot damage roll and
+ pitch. <b>It predicts confidence</b>, and that confidence feeds the filter as measurement noise, so an
+ unreliable frame simply does not move the estimate. And <b>small</b>, because it only produces a
+ measurement &mdash; the filter does the tracking." </p></div>
+  <div class="block tech"><div class="lbl">Technical</div>
+  <p>Ablations: remove graph edges (dense), shrink the receptive field, remove the filter (direct
+ per-frame prediction), remove uncertainty, remove the phone as an input, and an independent per-sensor
+ model at matched parameter count. The bidirectional variant is retained as the offline upper bound so
+ the cost of causality is measured rather than assumed.</p></div>
+  <div class="block ask"><div class="lbl">Expect</div>
+  <p><b>"Why not a transformer?"</b> &mdash; Nothing to gain. The inductive bias we want &mdash; anatomy,
+ locality, a short horizon &mdash; is what the graph and the dilated convolutions already give, and the
+ real dataset is small.</p></div>
+</div>
+
+<!-- 22 -->
+<div class="slide">
+  <div class="hdr"><span class="badge">22</span><span class="title">On reinforcement learning</span><span class="time">~60 s</span></div>
   <div class="block simple"><div class="lbl">Say it simply</div>
   <p>"I was asked about using reinforcement learning, so let me be straight about it. For the main job
   it's the wrong tool — when you already know the right answer from your training data, you should just
@@ -390,9 +447,9 @@
   weaker result later. The adaptation piece delivers what RL was wanted <i>for</i>.</p></div>
 </div>
 
-<!-- 22 -->
+<!-- 23 -->
 <div class="slide">
-  <div class="hdr"><span class="badge">22</span><span class="title">How we'll know it worked</span><span class="time">~55 s</span></div>
+  <div class="hdr"><span class="badge">23</span><span class="title">How we'll know it worked</span><span class="time">~55 s</span></div>
   <div class="block simple"><div class="lbl">Say it simply</div>
   <p>"I measure heading error in degrees per body part, and also where the joints end up in space,
   because a small error at the hips becomes a big error at the hand. Three rules I'm setting in advance:
@@ -407,9 +464,9 @@
   phenomenon being measured.</p></div>
 </div>
 
-<!-- 23 -->
+<!-- 24 -->
 <div class="slide">
-  <div class="hdr"><span class="badge">23</span><span class="title">Ten weeks</span><span class="time">~50 s</span></div>
+  <div class="hdr"><span class="badge">24</span><span class="title">Ten weeks</span><span class="time">~50 s</span></div>
   <div class="block simple"><div class="lbl">Say it simply</div>
   <p>"Ten weeks. The first two are unglamorous — reading the phone code and fixing the logging — and
   that's on purpose. The risky question is whether the phone actually sends what I need, and I want to
@@ -422,9 +479,9 @@
   and optical access, which are the items most likely to slip.</p></div>
 </div>
 
-<!-- 24 -->
+<!-- 25 -->
 <div class="slide">
-  <div class="hdr"><span class="badge">24</span><span class="title">The honest risk</span><span class="time">~45 s</span></div>
+  <div class="hdr"><span class="badge">25</span><span class="title">The honest risk</span><span class="time">~45 s</span></div>
   <div class="block simple"><div class="lbl">Say it simply</div>
   <p>"The honest risk is that the geometry fix alone solves most of it and there isn't much left for the
   model to do. I'd rather say that now than discover it in week nine. And it wouldn't be a failed
@@ -440,9 +497,9 @@
   the pivot targets are already scoped. Either path ends in a complete, evaluated result.</p></div>
 </div>
 
-<!-- 25 -->
+<!-- 26 -->
 <div class="slide">
-  <div class="hdr"><span class="badge">25</span><span class="title">What this contributes</span><span class="time">~45 s</span></div>
+  <div class="hdr"><span class="badge">26</span><span class="title">What this contributes</span><span class="time">~45 s</span></div>
   <div class="block simple"><div class="lbl">Say it simply</div>
   <p>"Four things. A working way to anchor this kind of suit to a phone's camera tracking. A small model
   that fixes what's left once that anchor exists. A test setup that can actually tell the different
@@ -455,16 +512,16 @@
   deterministic/learned boundary for magnetometer-free suits with a body-worn visual anchor.</p></div>
 </div>
 
-<!-- 26 -->
+<!-- 27 -->
 <div class="slide">
-  <div class="hdr"><span class="badge">26</span><span class="title">Image credits</span><span class="time">~10 s</span></div>
+  <div class="hdr"><span class="badge">27</span><span class="title">Image credits</span><span class="time">~10 s</span></div>
   <div class="block simple"><div class="lbl">Say it simply</div>
   <p>"The axes diagram is NASA, public domain. The room-mapping photograph is Creative Commons, credited here and on the slide. The pipeline and model diagrams are mine." Don't dwell.</p></div>
 </div>
 
-<!-- 27 -->
+<!-- 28 -->
 <div class="slide">
-  <div class="hdr"><span class="badge">27</span><span class="title">Questions</span><span class="time">—</span></div>
+  <div class="hdr"><span class="badge">28</span><span class="title">Questions</span><span class="time">—</span></div>
   <div class="block simple"><div class="lbl">Say it simply</div>
   <p>"Happy to take questions."</p></div>
   <div class="block ask"><div class="lbl">Have ready</div>
