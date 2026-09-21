@@ -6,8 +6,11 @@ TFT_eSPI *tft;
 bool isCharging = false;
 
 
+// PROTOCOL: this is the hub's STA MAC and the pod sends UNICAST to it. It was
+// called `broadcastAddress`, which is simply wrong and cost review time every
+// time someone read the radio path looking for a broadcast that isn't there.
 const char *mac_address_str = "DC:DA:0C:17:10:A0";
-uint8_t broadcastAddress[6];
+uint8_t hubAddress[6];
 
 // Array of arrays containing 2 strings each
 String boneName[][2] = {
@@ -99,6 +102,11 @@ uint16_t FG = POD_FG[MESQ_POD_ID];
 #include "ICM_20948.h"  // Click here to get the library: http://librarymanager/All#SparkFun_ICM_20948_IMU
 #define AD0_VAL 0
 
+// Phase 3 cores. Both headers also compile on a desktop with -DMESQ_HOST_TEST
+// so tools/firmware_tests.cpp exercises this exact code under real threads.
+#include "mesq_pod_core.h"
+#include "mesq_packet.h"
+
 // ===========================================================================
 //  RADIO CONFIG -- MUST MATCH THE DONGLE
 //  Both pods and dongle must run on the same WiFi channel for ESP-NOW to
@@ -126,6 +134,23 @@ uint16_t FG = POD_FG[MESQ_POD_ID];
 // =========================================================================
 #ifndef MESQ_INSTR
 #define MESQ_INSTR 0
+#endif
+
+// =========================================================================
+//  SENS-02 -- the two raw DMP streams that are enabled and never read.
+//
+//  RAW_ACCELEROMETER and RAW_GYROSCOPE are enabled in setupIMU() and no code
+//  anywhere reads data.Raw_Accel or data.Raw_Gyro. Every FIFO packet still
+//  carries them, so every I2C read is longer than it needs to be.
+//
+//  This is left ON by default ON PURPOSE. It is a PERFORMANCE change and the
+//  master prompt's Gate 5 requires a measured effect before one is made; no
+//  pod has been on a bench this phase. Build with
+//  -DMESQ_DISABLE_UNUSED_DMP_STREAMS=1 to run the A/B described in
+//  A1_07_OPEN_ITEMS_AND_HARDWARE_RUNBOOK.md (M-SENS02), then decide.
+// =========================================================================
+#ifndef MESQ_DISABLE_UNUSED_DMP_STREAMS
+#define MESQ_DISABLE_UNUSED_DMP_STREAMS 0
 #endif
 
 #if MESQ_INSTR
@@ -209,48 +234,24 @@ bool isOn = true;
 int lastTouch = millis();
 
 // =========================================================================
-//  BINARY WIRE FORMAT  (16 bytes)
-//  Replaces the old struct_message with a packed, fixed-size frame so the
-//  payload is small (~9x smaller than the JSON the dongle used to print) and
-//  free of the well-known "String inside a memcpy'd struct" heap-pointer bug.
-//
-//   off  size  field
-//   0    1     sync0   = 0xAA
-//   1    1     sync1   = 0x55
-//   2    1     id      bone enum (see table at top of file)
-//   3    1     batt    0..100 (%)
-//   4    2     qx_i16  quaternion.x * 32767
-//   6    2     qy_i16
-//   8    2     qz_i16
-//   10   2     qw_i16
-//   12   2     count   uint16, wraps
-//   14   2     ms_lo   low 16 bits of millis() at send time
+//  BINARY WIRE FORMAT -- see mesq_packet.h for the full layout table and the
+//  field-semantics notes. Layout is UNCHANGED from Phase 1; `ms_lo` now
+//  carries the sample-decode time rather than the transmit time (NODE-02).
 // =========================================================================
-typedef struct __attribute__((packed)) pod_packet_t {
-  uint8_t  sync0;
-  uint8_t  sync1;
-  uint8_t  id;
-  uint8_t  batt;
-  int16_t  qx;
-  int16_t  qy;
-  int16_t  qz;
-  int16_t  qw;
-  uint16_t count;
-  uint16_t ms_lo;
-} pod_packet_t;
+static uint8_t txBuf[MESQ_PACKET_LEN];
 
-static_assert(sizeof(pod_packet_t) == 16, "pod_packet_t must be exactly 16 bytes");
+// CONCURRENCY: the one channel between the two cores.
+//   producer: TaskReadIMU  (core 1)
+//   consumer: TaskWifi     (core 0)
+// Phase 1 shared four loose floats here with no synchronisation at all
+// (NODE-01). See mesq_pod_core.h for why this is a critical section and not
+// a queue or a seqlock.
+MesqSampleChannel g_sampleCh;
 
-pod_packet_t myData;
-
-// Quantize a float in [-1, 1] to int16. Saturates rather than wrapping so an
-// out-of-range value (e.g. NaN coerced to a huge number) doesn't flip sign.
-static inline int16_t q_to_i16(float v) {
-  if (v >  1.0f) v =  1.0f;
-  if (v < -1.0f) v = -1.0f;
-  if (isnan(v))  v = 0.0f;
-  return (int16_t)(v * 32767.0f);
-}
+// Counters surfaced by the 1 Hz instrumentation line.
+static volatile uint32_t g_quatRepaired = 0;   // SENS-03: roundoff clamped
+static volatile uint32_t g_quatRejected = 0;   // SENS-03: sample thrown away
+static volatile uint32_t g_heldSends    = 0;   // SYNC-08: no fresh sample to send
 
 // Create peer interface
 esp_now_peer_info_t peerInfo;
@@ -293,7 +294,8 @@ String mac_address;
 int fps = 32;
 
 int batt_v = 0;
-float quatI, quatJ, quatK, quatReal;
+// (quatI/quatJ/quatK/quatReal removed -- declared in Phase 1, never assigned
+//  or read anywhere in the sketch.)
 
 uint32_t readADC_Cal(int ADC_Raw) {
   esp_adc_cal_characteristics_t adc_chars;
@@ -305,12 +307,12 @@ uint32_t readADC_Cal(int ADC_Raw) {
 bool calibrated = false;
 
 
-struct Quat {
-  float x;
-  float y;
-  float z;
-  float w;
-} quat;
+// NODE-01: the Phase 1 shared state lived here --
+//     struct Quat { float x, y, z, w; } quat;
+// written field-by-field on core 1, read field-by-field on core 0, with no
+// synchronisation. It is DELETED rather than left unused, so the
+// unsynchronised path cannot be reintroduced by accident. The replacement is
+// g_sampleCh (MesqSampleChannel), declared with the wire format above.
 
 #define NB_RECS 5
 
@@ -362,101 +364,149 @@ void TaskReadIMU(void *pvParameters);
 #endif
 
 
-void setupIMU() {
-  Wire.begin(21, 22);
+// =========================================================================
+//  NODE-04 -- bounded initialisation with an observable error state
+//
+//  Phase 1:
+//      while (!initialized) { myICM.begin(...); ... delay(500); }   // forever
+//      ...
+//      if (!success) { Serial.println("Enable DMP failed!"); while (1) ; }
+//
+//  A pod with a marginal I2C connection sat in one of those two loops for the
+//  whole session. The screen still showed its bone name, the battery bar
+//  still updated, and it transmitted nothing. To the operator it looked
+//  identical to a radio problem, which is why Phase 1 listed it as one of the
+//  latching causes of symptoms S3/S4.
+//
+//  RECOVERY: bounded attempts with backoff, a boot stage recorded at every
+//  step, the failure PAINTED ON THE WATCH so it is visible across the room,
+//  and a slow retry afterwards instead of either a hang or a reboot loop. A
+//  reboot loop was rejected deliberately: it would re-enter setup(), re-run
+//  the radio init, and make a dead pod look intermittent rather than dead.
+// =========================================================================
+enum MesqBootStage : uint8_t {
+  MESQ_BOOT_START      = 0,
+  MESQ_BOOT_I2C_OK     = 1,
+  MESQ_BOOT_IMU_OK     = 2,
+  MESQ_BOOT_DMP_OK     = 3,
+  MESQ_BOOT_FIFO_OK    = 4,
+  MESQ_BOOT_RUNNING    = 5,
+  MESQ_BOOT_FAIL_IMU   = 200,
+  MESQ_BOOT_FAIL_DMP   = 201
+};
+volatile uint8_t g_bootStage = MESQ_BOOT_START;
 
+#define MESQ_IMU_MAX_ATTEMPTS 10
+#define MESQ_IMU_RETRY_MS     20000   /* re-attempt every 20 s once failed */
+
+static const char *mesqBootStageName(uint8_t st) {
+  switch (st) {
+    case MESQ_BOOT_START:    return "START";
+    case MESQ_BOOT_I2C_OK:   return "I2C_OK";
+    case MESQ_BOOT_IMU_OK:   return "IMU_OK";
+    case MESQ_BOOT_DMP_OK:   return "DMP_OK";
+    case MESQ_BOOT_FIFO_OK:  return "FIFO_OK";
+    case MESQ_BOOT_RUNNING:  return "RUNNING";
+    case MESQ_BOOT_FAIL_IMU: return "FAIL_IMU";
+    case MESQ_BOOT_FAIL_DMP: return "FAIL_DMP";
+  }
+  return "?";
+}
+
+// Paint the failure where a human will see it. A pod that cannot reach its
+// IMU must not look like a working pod with a radio problem.
+static void mesqShowFault(const char *what) {
+  tft->fillScreen(TFT_RED);
+  tft->setTextColor(TFT_WHITE, TFT_RED);
+  tft->setTextSize(1);
+  tft->drawCentreString("SENSOR FAULT", 120, 60, 4);
+  tft->drawCentreString(what, 120, 110, 4);
+  tft->drawCentreString(String("POD ") + sendID, 120, 160, 4);
+}
+
+// Returns true when the IMU and DMP are both up.
+// WHY: GPIO21 = SDA, GPIO22 = SCL at 400 kHz. These are the pins the audited
+// code selects; the physical wiring and what else shares this bus have NOT
+// been confirmed against a schematic or a continuity test, so do not remap
+// them on the strength of this comment alone (see A1_07, item U-I2C).
+bool setupIMU() {
+  Wire.begin(21, 22);
   delay(500);
   Wire.setClock(400000);
-
-  //myICM.enableDebugging();
+  g_bootStage = MESQ_BOOT_I2C_OK;
 
   bool initialized = false;
-  while (!initialized) {
-
+  for (int attempt = 1; attempt <= MESQ_IMU_MAX_ATTEMPTS && !initialized; attempt++) {
     myICM.begin(Wire, AD0_VAL);
-
-    Serial.print(F("Initialization of the sensor returned: "));
-    Serial.println(myICM.statusString());
-    if (myICM.status != ICM_20948_Stat_Ok) {
-      Serial.println(F("Trying again..."));
-      delay(500);
-    } else {
+    Serial.printf("IMU_ATTEMPT   : %d/%d -> %s\n",
+                  attempt, MESQ_IMU_MAX_ATTEMPTS, myICM.statusString());
+    if (myICM.status == ICM_20948_Stat_Ok) {
       initialized = true;
+    } else {
+      // Linear backoff: 200, 400, ... 2000 ms. A cold ICM-20948 can need a
+      // few hundred ms; ten attempts spans ~11 s, long enough to ride out a
+      // slow power rail and short enough that the operator is not left
+      // guessing whether the pod is alive.
+      delay(200 * (attempt < 10 ? attempt : 10));
     }
   }
 
-  Serial.println(F("Device connected."));
-
-  bool success = true;  // Use success to show if the DMP configuration was successful
-
-  // Initialize the DMP. initializeDMP is a weak function. In this example we overwrite it to change the sample rate (see below)
-  success &= (myICM.initializeDMP() == ICM_20948_Stat_Ok);
-
-  // DMP sensor options are defined in ICM_20948_DMP.h
-  //    INV_ICM20948_SENSOR_ACCELEROMETER               (16-bit accel)
-  //    INV_ICM20948_SENSOR_GYROSCOPE                   (16-bit gyro + 32-bit calibrated gyro)
-  //    INV_ICM20948_SENSOR_RAW_ACCELEROMETER           (16-bit accel)
-  //    INV_ICM20948_SENSOR_RAW_GYROSCOPE               (16-bit gyro + 32-bit calibrated gyro)
-  //    INV_ICM20948_SENSOR_MAGNETIC_FIELD_UNCALIBRATED (16-bit compass)
-  //    INV_ICM20948_SENSOR_GYROSCOPE_UNCALIBRATED      (16-bit gyro)
-  //    INV_ICM20948_SENSOR_STEP_DETECTOR               (Pedometer Step Detector)
-  //    INV_ICM20948_SENSOR_STEP_COUNTER                (Pedometer Step Detector)
-  //    INV_ICM20948_SENSOR_GAME_ROTATION_VECTOR        (32-bit 6-axis quaternion)
-  //    INV_ICM20948_SENSOR_ROTATION_VECTOR             (32-bit 9-axis quaternion + heading accuracy)
-  //    INV_ICM20948_SENSOR_GEOMAGNETIC_ROTATION_VECTOR (32-bit Geomag RV + heading accuracy)
-  //    INV_ICM20948_SENSOR_GEOMAGNETIC_FIELD           (32-bit calibrated compass)
-  //    INV_ICM20948_SENSOR_GRAVITY                     (32-bit 6-axis quaternion)
-  //    INV_ICM2094
-  //    INV_ICM20948_SENSOR_ORIENTATION                 (32-bit 9-axis quaternion + heading accuracy)
-
-  // Enable the DMP orientation sensor
-  success &= (myICM.enableDMPSensor(INV_ICM20948_SENSOR_GAME_ROTATION_VECTOR) == ICM_20948_Stat_Ok);
-
-  // Enable any additional sensors / features
-  success &= (myICM.enableDMPSensor(INV_ICM20948_SENSOR_RAW_GYROSCOPE) == ICM_20948_Stat_Ok);
-  success &= (myICM.enableDMPSensor(INV_ICM20948_SENSOR_RAW_ACCELEROMETER) == ICM_20948_Stat_Ok);
-  //success &= (myICM.enableDMPSensor(INV_ICM20948_SENSOR_MAGNETIC_FIELD_UNCALIBRATED) == ICM_20948_Stat_Ok);
-
-  // Configuring DMP to output data at multiple ODRs:
-  // DMP is capable of outputting multiple sensor data at different rates to FIFO.
-  // Setting value can be calculated as follows:
-  // Value = (DMP running rate / ODR ) - 1
-  // E.g. For a 5Hz ODR rate when DMP is running at 55Hz, value = (55/5) - 1 = 10.
-  success &= (myICM.setDMPODRrate(DMP_ODR_Reg_Quat6, 0) == ICM_20948_Stat_Ok);  // Set to the maximum
-  //success &= (myICM.setDMPODRrate(DMP_ODR_Reg_Accel, 0) == ICM_20948_Stat_Ok); // Set to the maximum
-  //success &= (myICM.setDMPODRrate(DMP_ODR_Reg_Gyro, 0) == ICM_20948_Stat_Ok); // Set to the maximum
-  //success &= (myICM.setDMPODRrate(DMP_ODR_Reg_Gyro_Calibr, 0) == ICM_20948_Stat_Ok); // Set to the maximum
-  //success &= (myICM.setDMPODRrate(DMP_ODR_Reg_Cpass, 0) == ICM_20948_Stat_Ok); // Set to the maximum
-  //success &= (myICM.setDMPODRrate(DMP_ODR_Reg_Cpass_Calibr, 0) == ICM_20948_Stat_Ok); // Set to the maximum
-
-  // Enable the FIFO
-  success &= (myICM.enableFIFO() == ICM_20948_Stat_Ok);
-
-  // Enable the DMP
-  success &= (myICM.enableDMP() == ICM_20948_Stat_Ok);
-
-  // Reset DMP
-  success &= (myICM.resetDMP() == ICM_20948_Stat_Ok);
-
-  // Reset FIFO
-  success &= (myICM.resetFIFO() == ICM_20948_Stat_Ok);
-
-  // Check success
-  if (success) {
-    Serial.println(F("DMP enabled."));
-  } else {
-    Serial.println(F("INIT_RESULT   : IMU_OK DMP_FAIL"));   // I8 -> NODE-04
-    Serial.println(F("Enable DMP failed!"));
-    Serial.println(F("Please check that you have uncommented line 29 (#define ICM_20948_USE_DMP) in ICM_20948_C.h..."));
-    while (1)
-      ;  // Do nothing more
+  if (!initialized) {
+    g_bootStage = MESQ_BOOT_FAIL_IMU;
+    Serial.println(F("INIT_RESULT   : IMU_FAIL"));
+    mesqShowFault("IMU NOT FOUND");
+    return false;                       // caller decides; no hang here
   }
 
+  g_bootStage = MESQ_BOOT_IMU_OK;
+  Serial.println(F("Device connected."));
 
+  bool success = true;
+  success &= (myICM.initializeDMP() == ICM_20948_Stat_Ok);
 
+  // WHY Quat6 / Game Rotation Vector: 6-axis fusion, accelerometer plus
+  // gyroscope, magnetometer deliberately disabled. That means there is NO
+  // Earth-referenced yaw -- the heading at boot is arbitrary. Phase 1's
+  // 71-99 deg session-to-session heading error is that arbitrary origin, NOT
+  // gyro drift, and enabling the magnetometer is a calibrated, disturbance-
+  // tested architecture decision, not a one-line change. See
+  // A1_01_SOLUTION_DECISIONS.md, "heading".
+  success &= (myICM.enableDMPSensor(INV_ICM20948_SENSOR_GAME_ROTATION_VECTOR) == ICM_20948_Stat_Ok);
+
+#if !MESQ_DISABLE_UNUSED_DMP_STREAMS
+  // SENS-02: enabled, never read. Kept on by default pending the bench A/B.
+  success &= (myICM.enableDMPSensor(INV_ICM20948_SENSOR_RAW_GYROSCOPE) == ICM_20948_Stat_Ok);
+  success &= (myICM.enableDMPSensor(INV_ICM20948_SENSOR_RAW_ACCELEROMETER) == ICM_20948_Stat_Ok);
+#endif
+
+  // UNITS: the ODR register holds a DIVIDER, not a rate.
+  //     value = (DMP running rate / desired ODR) - 1
+  // 0 therefore means "every cycle", i.e. the maximum this DMP configuration
+  // produces. Phase 1 recorded ~55 Hz for the stock SparkFun path. That is a
+  // property of THIS initialisation, not a hardware ceiling of the
+  // ICM-20948 -- SparkFun ships Example10_DMP_FastMultipleSensors with a
+  // higher-rate custom init. Whether it works with the pinned library version
+  // is UNVERIFIED and needs a bench (A1_07, M-SENS01).
+  success &= (myICM.setDMPODRrate(DMP_ODR_Reg_Quat6, 0) == ICM_20948_Stat_Ok);
+
+  success &= (myICM.enableFIFO() == ICM_20948_Stat_Ok);
+  success &= (myICM.enableDMP()  == ICM_20948_Stat_Ok);
+  success &= (myICM.resetDMP()   == ICM_20948_Stat_Ok);
+  success &= (myICM.resetFIFO()  == ICM_20948_Stat_Ok);
+
+  if (!success) {
+    g_bootStage = MESQ_BOOT_FAIL_DMP;
+    Serial.println(F("INIT_RESULT   : IMU_OK DMP_FAIL"));
+    Serial.println(F("Check that #define ICM_20948_USE_DMP is uncommented in ICM_20948_C.h"));
+    mesqShowFault("DMP INIT FAILED");
+    return false;                       // was: while (1) ;
+  }
+
+  g_bootStage = MESQ_BOOT_FIFO_OK;
   Serial.println(F("IMU enabled"));
-  Serial.println(F("INIT_RESULT   : IMU_OK DMP_OK"));   // I8 -> NODE-04
+  Serial.println(F("INIT_RESULT   : IMU_OK DMP_OK"));
   calibrated = true;
+  return true;
 }
 
 
@@ -520,7 +570,7 @@ motorPulse(2);
 
   tft->setTextSize(1);
 
-  mac_string_to_uint8_array(mac_address_str, broadcastAddress);
+  mac_string_to_uint8_array(mac_address_str, hubAddress);
 
 
   // pinMode(3, OUTPUT);
@@ -597,7 +647,7 @@ motorPulse(2);
   // Register peer. `channel = 0` used to mean "use current channel" but that
   // is fragile -- if the STA roams the peer's channel becomes stale and ESP-
   // NOW silently drops sends. Be explicit.
-  memcpy(peerInfo.peer_addr, broadcastAddress, 6);
+  memcpy(peerInfo.peer_addr, hubAddress, 6);
   peerInfo.channel = ESPNOW_WIFI_CHANNEL;
   peerInfo.encrypt = false;
 
@@ -613,7 +663,14 @@ motorPulse(2);
   delay(100);
 
 
-  setupIMU();
+  // RECOVERY: a failed init no longer hangs. The tasks still start, the fault
+  // is on the screen and in the boot banner, and TaskReadIMU retries slowly.
+  if (!setupIMU()) {
+    Serial.printf("BOOT_STAGE    : %s (pod will retry every %d ms)\n",
+                  mesqBootStageName(g_bootStage), MESQ_IMU_RETRY_MS);
+  } else {
+    g_bootStage = MESQ_BOOT_RUNNING;
+  }
 
 
 
@@ -718,47 +775,55 @@ int getBattery() {
 bool touchoff = false;
 
 void TaskWifi(void *pvParameters) {
+  // NODE-03 / NET-03: a fixed-grid deadline in MICROSECONDS, seeded with a
+  // deterministic per-node phase offset. See mesq_pod_core.h for the three
+  // defects this replaces and why the offset matters for a 17-pod fleet.
+  // UNITS: 1000000 / 32 = 31250 us exactly. The Phase 1 gate computed
+  // 1000 / 32 = 31 ms in integer arithmetic and then compared with `>`.
+  MesqDeadline dl;
+  mesqDeadlineInit(&dl, 1000000u / (uint32_t)fps, (uint32_t)micros(),
+                   (uint32_t)sendID, MESQ_NUM_BONES);
+
   for (;;) {
-    // button.loop();
-
-    
-    static uint32_t prev_ms = millis();
-
-    if (millis() > (prev_ms + (1000 / fps))) {
+    if (mesqDeadlineDue(&dl, (uint32_t)micros())) {
       fcount++;
 
-      // Build the 16-byte binary packet. Bone name is no longer on the wire;
-      // the dongle and browser both look up name-from-id via the same enum.
-      myData.sync0 = 0xAA;
-      myData.sync1 = 0x55;
-      myData.id    = (uint8_t)sendID;
-      // batt_v here is the integer percentage from getBattery(); clamp to 0..100
-      // so the byte field is always in range (negative values can leak in
-      // briefly during boot before the AXP202 ADC stabilises).
+      // CONCURRENCY: one coherent record crosses the core boundary here.
+      // quaternion, sample time, sequence and validity are copied together
+      // under a critical section, so they cannot come from different samples.
+      bool isFresh = false;
+      MesqSample smp = g_sampleCh.take(&isFresh);
+      if (!isFresh) g_heldSends++;      // SYNC-08: this packet repeats a pose
+
       int b = batt_v;
       if (b < 0)   b = 0;
       if (b > 100) b = 100;
-      myData.batt  = (uint8_t)b;
-      myData.qx    = q_to_i16(quat.x);
-      myData.qy    = q_to_i16(quat.y);
-      myData.qz    = q_to_i16(quat.z);
-      myData.qw    = q_to_i16(quat.w);
-      myData.count = (uint16_t)count;
-      myData.ms_lo = (uint16_t)millis();
+
+      // PROTOCOL: ms_lo carries smp.sample_ms -- the pod clock when the DMP
+      // sample was DECODED, not when this packet is being sent. Two packets
+      // with the same ms_lo therefore provably carry the same sensor sample,
+      // which is how the browser tells a measurement from a held pose. The
+      // 16-byte layout is unchanged; only this field's meaning is.
+      // `count` stays the PACKET counter, so gap detection keeps measuring
+      // radio loss rather than the intended ~55 -> ~32 Hz decimation.
+      mesq_pack(txBuf, (uint8_t)sendID, (uint8_t)b,
+                smp.w, smp.x, smp.y, smp.z,
+                (uint16_t)count, (uint16_t)smp.sample_ms);
 
 #if MESQ_INSTR
       {
         int64_t _ic0 = esp_timer_get_time();
-        // N1: torn cross-core read shows up as a non-unit quaternion
-        float _n = quat.x*quat.x + quat.y*quat.y + quat.z*quat.z + quat.w*quat.w;
-        if (_n < 0.999f || _n > 1.001f) mesq_normBad++;
-        // N3: age of the sample at the moment we transmit it
+        // N1: with the coherent channel this must stay at zero. A non-zero
+        // count here means the handoff regressed.
+        if (!mesqSampleCoherent(smp)) mesq_normBad++;
+        // N3: age of the sample at the moment we transmit it. Same clock
+        // domain (this pod's), so this is a valid duration, not a
+        // cross-device latency (master prompt rule 16).
         if (mesq_lastSampleUs != 0) {
           uint32_t _age = (uint32_t)((_ic0 - mesq_lastSampleUs) / 1000);
           mesq_ageN++; mesq_ageSum += _age;
           if (_age > mesq_ageMax) mesq_ageMax = _age;
         }
-        // I4: actual interval between sends
         static uint32_t _lastSend = 0;
         uint32_t _nowMs = millis();
         if (_lastSend) {
@@ -772,25 +837,29 @@ void TaskWifi(void *pvParameters) {
       }
 #endif
 
-      esp_now_send(broadcastAddress, (uint8_t *)&myData, sizeof(myData));
+      // esp_now_send() returning ESP_OK means the frame was ACCEPTED for
+      // transmission. It is not delivery, and the MAC-layer callback's
+      // ESP_NOW_SEND_SUCCESS is not application receipt either. Only the
+      // hub's per-node counters can say a packet arrived.
+      esp_now_send(hubAddress, txBuf, MESQ_PACKET_LEN);
 
-      prev_ms = millis();
       count++;
 
 #if MESQ_INSTR
-      // ---- 1 Hz instrumentation report, on core 0 (TaskWifi) so the
-      // ---- sample task on core 1 is not disturbed. Pod Serial is its own
-      // ---- USB port and is not the dongle's binary stream.
+      // ---- 1 Hz instrumentation report, on core 0 (TaskWifi) so the sample
+      // ---- task on core 1 is not disturbed. The pod's Serial is its own USB
+      // ---- port and is not the hub's binary stream.
       {
         static uint32_t _lastRep = 0;
         uint32_t _n2 = millis();
         if (_n2 - _lastRep >= 1000) {
           _lastRep = _n2;
           Serial.printf(
-            "[INSTR] id=%d quat6/s=%u read_us(min/mean/max)=%u/%u/%u fifoMore=%u "
+            "[INSTR] id=%d stage=%s quat6/s=%u read_us(min/mean/max)=%u/%u/%u fifoMore=%u "
             "send(n=%u min=%u max=%u b=%u/%u/%u/%u/%u/%u) age_ms(mean/max)=%u/%u "
-            "normBad=%u radNeg=%u heap=%u boots=%u instr_us/s=%llu\n",
-            sendID, mesq_quat6N,
+            "normBad=%u radNeg=%u qRep=%u qRej=%u held=%u drop=%u late_us=%u resync=%u "
+            "heap=%u boots=%u instr_us/s=%llu\n",
+            sendID, mesqBootStageName(g_bootStage), mesq_quat6N,
             mesq_readN ? mesq_readMin : 0,
             mesq_readN ? (uint32_t)(mesq_readSum / mesq_readN) : 0,
             mesq_readMax, mesq_fifoMoreN,
@@ -798,7 +867,8 @@ void TaskWifi(void *pvParameters) {
             mesq_sendBuckets[0], mesq_sendBuckets[1], mesq_sendBuckets[2],
             mesq_sendBuckets[3], mesq_sendBuckets[4], mesq_sendBuckets[5],
             mesq_ageN ? (uint32_t)(mesq_ageSum / mesq_ageN) : 0, mesq_ageMax,
-            mesq_normBad, mesq_radNeg,
+            mesq_normBad, mesq_radNeg, g_quatRepaired, g_quatRejected,
+            g_heldSends, g_sampleCh.dropped(), dl.late_us_max, dl.resyncs,
             (unsigned)ESP.getFreeHeap(), mesq_bootCount,
             (unsigned long long)mesq_instrCostUs);
           mesq_quat6N = 0; mesq_readN = 0; mesq_readSum = 0;
@@ -807,18 +877,17 @@ void TaskWifi(void *pvParameters) {
           for (int _b = 0; _b < 6; _b++) mesq_sendBuckets[_b] = 0;
           mesq_ageN = 0; mesq_ageSum = 0; mesq_ageMax = 0;
           mesq_instrCostUs = 0;
+          g_heldSends = 0; dl.late_us_max = 0;
         }
       }
 #endif
     }
-    //vTaskDelay(1/portTICK_PERIOD_MS);  // one tick delay (15ms) in between reads for stability
     vTaskDelay(1);
   }
 }
 
-float ax;
-float ay;
-float az;
+// (ax/ay/az removed -- declared in Phase 1, never assigned or read. The raw
+//  accelerometer stream they were presumably meant for is SENS-02.)
 
 void TaskReadIMU(void *pvParameters) {
   // Local state for direct GPIO-based long-press detection.
@@ -863,9 +932,15 @@ void TaskReadIMU(void *pvParameters) {
       lastTouch = millis();
     }
 
+    // PWR-01: this runs every 3 SECONDS, not "every minute" as the Phase 1
+    // comment claimed -- a 20x error that made the cost look negligible.
+    // handleBattDisplay() does an AXP202 ADC read AND a TFT redraw, both on
+    // the sample task, so whatever they cost is time the FIFO is not being
+    // drained. The cost is UNMEASURED; moving this work is a performance
+    // change and needs the bench A/B in A1_07 (M-PWR01) first. The comment is
+    // corrected now because a wrong comment is worse than none.
     static uint32_t prev_ms1 = millis();
     if (millis() > (prev_ms1 + 1000 * 3)) {
-      // read battery every minute
       handleBattDisplay();
       prev_ms1 = millis();
     }
@@ -894,72 +969,58 @@ void TaskReadIMU(void *pvParameters) {
       //if ( data.header < 0x10) Serial.print( "0" );
       //Serial.println( data.header, HEX );
 
-      if ((data.header & DMP_header_bitmap_Quat6) > 0)  // We have asked for GRV data so we should receive Quat6
+      if ((data.header & DMP_header_bitmap_Quat6) > 0)  // We asked for GRV, so we get Quat6
       {
 #if MESQ_INSTR
         mesq_quat6N++;   // I9: this count per second IS the DMP output rate
 #endif
-        // Q0 value is computed from this equation: Q0^2 + Q1^2 + Q2^2 + Q3^2 = 1.
-        // In case of drift, the sum will not add to 1, therefore, quaternion data need to be corrected with right bias values.
-        // The quaternion data is scaled by 2^30.
+        // MATH: the DMP ships x, y, z as Q30 fixed point and omits w, which
+        // is recovered from the unit-norm constraint. mesqReconstructQuat()
+        // owns the whole policy -- clamp true roundoff, reject a genuinely
+        // bad sample, renormalise, and never produce the zero quaternion.
+        // Phase 1 called sqrt() on the raw radicand; when it went negative
+        // the result was NaN, q_to_i16(NaN) was 0, and the pod transmitted
+        // (0,0,0,0), which is not a rotation at all (SENS-03).
+        double q1 = mesqQ30ToDouble(data.Quat6.Data.Q1);
+        double q2 = mesqQ30ToDouble(data.Quat6.Data.Q2);
+        double q3 = mesqQ30ToDouble(data.Quat6.Data.Q3);
 
-        //Serial.printf("Quat6 data is: Q1:%ld Q2:%ld Q3:%ld\r\n", data.Quat6.Data.Q1, data.Quat6.Data.Q2, data.Quat6.Data.Q3);
-
-        // Scale to +/- 1
-        double q1 = ((double)data.Quat6.Data.Q1) / 1073741824.0;  // Convert to double. Divide by 2^30
-        double q2 = ((double)data.Quat6.Data.Q2) / 1073741824.0;  // Convert to double. Divide by 2^30
-        double q3 = ((double)data.Quat6.Data.Q3) / 1073741824.0;  // Convert to double. Divide by 2^30
-
-
-        // Convert the quaternions to Euler angles (roll, pitch, yaw)
-        // https://en.wikipedia.org/w/index.php?title=Conversion_between_quaternions_and_Euler_angles&section=8#Source_code_2
-
-        double _rad = 1.0 - ((q1 * q1) + (q2 * q2) + (q3 * q3));
 #if MESQ_INSTR
-        if (_rad < 0.0) mesq_radNeg++;   // N2 -> SENS-03
+        if ((1.0 - (q1*q1 + q2*q2 + q3*q3)) < 0.0) mesq_radNeg++;   // N2
 #endif
-        double q0 = sqrt(_rad);
+        double w, x, y, z;
+        MesqQuatStatus qst = mesqReconstructQuat(q1, q2, q3, &w, &x, &y, &z);
 
-        double q2sqr = q2 * q2;
+        if (qst == MESQ_Q_REJECTED) {
+          // RECOVERY: hold the previous orientation. The channel keeps its
+          // last good sample and TaskWifi will mark the next packet HELD,
+          // which is honest. Inventing a plausible rotation is not.
+          g_quatRejected++;
+        } else {
+          if (qst == MESQ_Q_REPAIRED) g_quatRepaired++;
 
-        // roll (x-axis rotation)
-        double t0 = +2.0 * (q0 * q1 + q2 * q3);
-        double t1 = +1.0 - 2.0 * (q1 * q1 + q2sqr);
-        double roll = atan2(t0, t1) * 180.0 / PI;
+          // CONCURRENCY: the ONLY place the sample crosses to core 0. One
+          // call publishes quaternion, sample time and sequence together.
+          // UNITS: millis() here is the pod's own clock at FIFO DECODE. It
+          // is a `sample_observed_time`, not the DMP's internal sample
+          // instant -- no interrupt edge is wired, so the true instant is
+          // unverified and must not be claimed (master prompt rule 16).
+          g_sampleCh.publish((float)w, (float)x, (float)y, (float)z, millis());
+        }
 
-        // pitch (y-axis rotation)
-        double t2 = +2.0 * (q0 * q2 - q3 * q1);
-        t2 = t2 > 1.0 ? 1.0 : t2;
-        t2 = t2 < -1.0 ? -1.0 : t2;
-        double pitch = asin(t2) * 180.0 / PI;
-
-        // yaw (z-axis rotation)
-        double t3 = +2.0 * (q0 * q3 + q1 * q2);
-        double t4 = +1.0 - 2.0 * (q2sqr + q3 * q3);
-        double yaw = atan2(t3, t4) * 180.0 / PI;
-
-        /*
-      Serial.print(q0, 3);
-      Serial.print(" ");
-      Serial.print(q1, 3);
-      Serial.print(" ");
-      Serial.print(q2, 3);
-      Serial.print(" ");
-      Serial.print(q3, 3);
-      Serial.println();
-      */
-
-        quat.w = q0;
-        quat.x = q1;
-        quat.y = q2;
-        quat.z = q3;
+        // NODE-06: Phase 1 computed roll/pitch/yaw here with two atan2 and
+        // one asin on every sample. Nothing read them -- they were local
+        // variables, never stored, never transmitted. Removed.
 #if MESQ_INSTR
-        mesq_lastSampleUs = esp_timer_get_time();   // N3: when the sample was produced
+        mesq_lastSampleUs = esp_timer_get_time();   // N3
 #endif
       }
     }
 
-    if (myICM.status != ICM_20948_Stat_FIFOMoreDataAvail)  // If more data is available then we should read it right away - and not delay
+    // WHY the conditional delay: when the FIFO reports more data we loop
+    // immediately and drain it, because a backlog is latency. Only when the
+    // FIFO is empty do we yield.
+    if (myICM.status != ICM_20948_Stat_FIFOMoreDataAvail)
     {
       delay(10);
     }

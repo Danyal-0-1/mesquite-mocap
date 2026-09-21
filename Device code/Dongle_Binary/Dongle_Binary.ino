@@ -62,6 +62,21 @@
 #define POD_TIMEOUT_MS 5000
 
 // =========================================================================
+//  BINARY WIRE FORMAT -- must match Pod_Watch_Binary's mesq_packet.h and
+//  js/mesq_parser.js.
+//
+//  These were declared BELOW the instrumentation block in Phase 2, but
+//  mesq_emitStatus() referenced SYNC0/SYNC1 -- and a macro is textual, so it
+//  must be defined before it is used. Any -DMESQ_INSTR=1 build of this sketch
+//  therefore failed to compile. Phase 2's own report records that nothing was
+//  ever compiled (P2-B0-02), which is exactly how this survived. Found by
+//  tools/check_sketches.sh.
+// =========================================================================
+#define POD_PACKET_LEN 16
+#define SYNC0          0xAA
+#define SYNC1          0x55
+
+// =========================================================================
 //  PHASE 2 INSTRUMENTATION (W1) -- observational only.
 //  Build with -DMESQ_INSTR=1. Default 0 compiles to nothing.
 //
@@ -115,12 +130,6 @@ static void mesq_emitStatus(const char *payload) {
     Serial.write((const uint8_t *)payload, n);
 }
 #endif
-
-// Binary wire format (must match pod_watch.ino's pod_packet_t and
-// webserialnative.js's BONE_NAMES table).
-#define POD_PACKET_LEN 16
-#define SYNC0          0xAA
-#define SYNC1          0x55
 
 const char* const POD_ABBR[NUM_PODS] = {
     "HD",   //  0  Head
