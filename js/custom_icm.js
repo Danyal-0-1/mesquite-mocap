@@ -2,6 +2,9 @@ var rigPrefix = "mm";
 window.sY = 0;
 window.sX = 0;
 window.sZ = 0;
+// KEPT (not bypassed): hipsAltLast is no longer used to gate anything -- see the
+// PHONE IS THE ROOT banner below. It stays as a liveness timestamp so the pod
+// can still be seen arriving in the UI while it serves as the drift witness.
 hipsAltLast = 0;
 hipsLast = 0;
 
@@ -130,6 +133,13 @@ function initGlobalLocalLast() {
   setLocal("Hips", bone.quaternion.x, bone.quaternion.y, bone.quaternion.z, bone.quaternion.w);
   initInitialPosition("Hips", bone.quaternion.x, bone.quaternion.y, bone.quaternion.z, bone.quaternion.w);
   
+  // KEPT (not bypassed): the HipsAlt entry must exist, because handleWSMessage()
+  // writes mac2Bones[bone].last.* for every incoming packet before any guard
+  // runs -- removing it would throw on the first pod frame. It also holds the
+  // pod's live reading, which is what makes the drift witness possible:
+  //     C0 = phone_delta  *  hip_pod_delta^-1   = the pod's accumulated drift
+  // This is the only place in the system where pod drift is directly
+  // observable without optical ground truth, so the pod stays on the wire.
   mac2Bones["HipsAlt"] = { calibration: { x: 0, y: 0, z: 0, w: 1 }, last: { x: 0, y: 0, z: 0, w: 1 }, global: { x: 0, y: 0, z: 0, w: 1 }, local: { x: 0, y: 0, z: 0, w: 1 }, bcalibration: { x: 0, y: 0, z: 0, w: 1 } };
   setGlobal("HipsAlt", bone.quaternion.x, bone.quaternion.y, bone.quaternion.z, bone.quaternion.w);
   setLocal("HipsAlt", bone.quaternion.x, bone.quaternion.y, bone.quaternion.z, bone.quaternion.w);
@@ -578,8 +588,22 @@ function handleWSMessage(obj) {
   const slerpFactor = .24; // range: 0.0 to 1.0
 
 
-  // Hips orientation - use when HipsAlt is not available (timeout > 1 second)
-  if (bone == "Hips" && hipsAltLast + 1000 < new Date().getTime()) {
+  // =========================================================================
+  //  PHONE IS THE ROOT  --  HipsAlt (hip pod) bypassed, 2026-09-24
+  //
+  //  WHY: the hip pod has no heading reference of its own. Its yaw starts at an
+  //  arbitrary value and drifts, because a 6-axis IMU can see gravity (which
+  //  fixes roll and pitch) but nothing that fixes rotation ABOUT gravity. The
+  //  phone's ARKit visual-inertial tracking observes fixed geometry in the
+  //  room, so its heading is corrected every frame and does not accumulate
+  //  error. Driving the skeleton root from the drifting sensor while the
+  //  non-drifting one sat unused was backwards.
+  // =========================================================================
+  //  SITE 1 of 4 -- the phone branch was gated behind a one-second pod timeout,
+  //  so it only ran as a FALLBACK after the pod had already failed. The gate is
+  //  removed: the phone now drives the root unconditionally.
+  //  Was: if (bone == "Hips" && hipsAltLast + 1000 < new Date().getTime()) {
+  if (bone == "Hips") {
     var refQInverse = new THREE.Quaternion().copy(refQuaternion).invert();
     var transformedQ = new THREE.Quaternion().multiplyQuaternions(rawQuaternion, refQInverse, bc);
 
@@ -592,28 +616,54 @@ function handleWSMessage(obj) {
 
     x.quaternion.slerp(hipQ, slerpDict[bone] || slerpFactor);
 
-    if(hipsAltLast + 1000 < new Date().getTime()){
-      setLocal("Hips", alt.x, alt.y, alt.z, alt.w);
-      setGlobal(bone, hipQ.x, hipQ.y, hipQ.z, hipQ.w);
-    }
+    // SITE 2 of 4 -- the same pod-timeout gate wrapped the writes themselves.
+    // Removed for the reason above; the phone's root now always reaches the rig.
+    // Was: if (hipsAltLast + 1000 < new Date().getTime()) { ... }
+    setLocal("Hips", alt.x, alt.y, alt.z, alt.w);
+    setGlobal(bone, hipQ.x, hipQ.y, hipQ.z, hipQ.w);
     hipsLast = new Date().getTime();
   }
 
-  // HipsAlt orientation - preferred for orientation when available
+  // =========================================================================
+  //  SITE 3 of 4 -- THE MAIN ONE. This block made the hip pod the skeleton's
+  //  root orientation: it wrote setLocal("Hips", ...) and setGlobal("Hips", ...)
+  //  from the pod's reading, overwriting whatever the phone had supplied.
+  //
+  //  Every limb re-parents through mac2Bones["Hips"].global (see the LeftUpLeg
+  //  block below and the 13 like it), so this one assignment decided the
+  //  reference frame for the ENTIRE body. Driving it from a drifting sensor
+  //  meant the whole skeleton drifted together.
+  //
+  //  Commented out rather than deleted: the pod is still worn and still
+  //  transmitting on bone id 2 (see SITE 4). Restoring this block is the A/B
+  //  control if the phone turns out to lose tracking too often.
+  // =========================================================================
+  // // HipsAlt orientation - preferred for orientation when available
+  // if (bone == "HipsAlt") {
+  //   var refQInverse = new THREE.Quaternion().copy(refQuaternion).invert();
+  //   var transformedQ = new THREE.Quaternion().multiplyQuaternions(rawQuaternion, refQInverse, bc);
+  //
+  //
+  //   var hipQ = getTransformedQuaternion(transformedQ, bone).normalize();
+  //   hipQ = applyMountingOffset(hipQ, bone);
+  //   x.quaternion.slerp(hipQ, slerpDict[bone] || slerpFactor);
+  //
+  //   setLocal("Hips", hipQ.x, hipQ.y, hipQ.z, hipQ.w);
+  //   setGlobal("Hips", hipQ.x, hipQ.y, hipQ.z, hipQ.w);
+  //   hipsAltLast = new Date().getTime();
+  // }
+
+  // DRIFT WITNESS (replaces the liveness line lost with SITE 3).
+  // The pod is bypassed as the root but is still worn and still transmitting on
+  // bone id 2. We record its arrival -- and nothing else. It does not touch the
+  // rig. Keeping it on the wire is deliberate: the pod and the phone are on the
+  // same body segment, one drifts and one does not, so
+  //     C0 = phone_delta  *  hip_pod_delta^-1
+  // is the pod's accumulated drift, directly observable without any optical
+  // ground truth. That signal is the whole reason not to simply unstrap it.
   if (bone == "HipsAlt") {
-    var refQInverse = new THREE.Quaternion().copy(refQuaternion).invert();
-    var transformedQ = new THREE.Quaternion().multiplyQuaternions(rawQuaternion, refQInverse, bc);
-
-
-    var hipQ = getTransformedQuaternion(transformedQ, bone).normalize();
-    hipQ = applyMountingOffset(hipQ, bone);
-    x.quaternion.slerp(hipQ, slerpDict[bone] || slerpFactor);
-
-    setLocal("Hips", hipQ.x, hipQ.y, hipQ.z, hipQ.w);
-    setGlobal("Hips", hipQ.x, hipQ.y, hipQ.z, hipQ.w);
     hipsAltLast = new Date().getTime();
   }
-
 
   if (bone == "LeftUpLeg") {
     var refQInverse = new THREE.Quaternion().copy(refQuaternion).invert();
@@ -667,11 +717,13 @@ function handleWSMessage(obj) {
     var spineQ = getTransformedQuaternion(transformedQ, bone);
     spineQ = applyMountingOffset(spineQ, bone);
 
-    // Use HipsAlt if Hips is not available (check if global has valid data)
+    // SITE 4 of 4 -- Spine used to fall back to the pod as its parent frame when
+    // the phone's root looked uninitialised. With the pod bypassed that fallback
+    // would silently reintroduce the drifting frame for the upper body only,
+    // which is worse than a brief identity parent: it would split the skeleton
+    // across two different reference frames.
+    // Was: if (Hips.global is still identity) parentBone = mac2Bones["HipsAlt"];
     var parentBone = mac2Bones["Hips"];
-    if (!parentBone || !parentBone.global || (parentBone.global.x === 0 && parentBone.global.y === 0 && parentBone.global.z === 0 && parentBone.global.w === 1)) {
-      parentBone = mac2Bones["HipsAlt"];
-    }
     
     var obj = parentBone.global;  // Use global instead of local to account for parent mounting offset
     var hipQ = new THREE.Quaternion(obj.x, obj.y, obj.z, obj.w).normalize();
@@ -918,7 +970,8 @@ function handleWSMessage(obj) {
 
  
   // Position data - only use Hips px,py,pz for positioning
-  // But use HipsAlt's posswap config when HipsAlt is active (within last 1 second)
+  // (posswapBone is hardcoded to "Hips" below, so the pod bypass does not affect
+  //  the position path -- position always came from the phone.)
   // W1b (PHN-01): the guard below is a TRUTHINESS test, so a coordinate of
   // exactly 0 -- which is where a WebXR session's origin sits -- silently
   // drops the frame. Counting it here BEFORE changing behaviour, per Rule 1.
@@ -931,7 +984,6 @@ function handleWSMessage(obj) {
   if( bone == "Hips" && obj.px && obj.py && obj.pz ) {
     obj.sensorPosition = { x: obj.px, y: obj.py, z: obj.pz};
     
-    // Determine which posswap configuration to use based on HipsAlt activity
     var posswapBone = "Hips";
     
     // Apply posswap transformation to raw position data
