@@ -1,0 +1,3 @@
+# Firmware images written by tools/build_pods.sh. Rebuild them from source;
+# never commit them (the manifest records which source and toolchain made them).
+/build/pods/

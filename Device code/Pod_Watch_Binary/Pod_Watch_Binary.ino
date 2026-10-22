@@ -43,10 +43,10 @@ String boneName[][2] = {
 //  eventually produce a duplicate sendID, which is SILENT at runtime and
 //  presents as "a node didn't connect".
 //
-//  Build one image per pod:
-//      arduino-cli compile \
-//        --build-property "build.extra_flags=-DMESQ_POD_ID=3" ...
-//  or run  tools/build_pods.sh  which generates all 17.
+//  Build the images with tools/build_pods.sh. For one pod (here id 3) it runs
+//      arduino-cli compile --fqbn esp32:esp32:twatch \
+//        --build-property "compiler.cpp.extra_flags=-DMESQ_POD_ID=3 -DICM_20948_USE_DMP=" \
+//        --build-property "compiler.c.extra_flags=-DICM_20948_USE_DMP=" ...
 //
 //  If MESQ_POD_ID is not defined the build FAILS. That is deliberate: a
 //  build error is recoverable in seconds, a duplicate id costs a session.
