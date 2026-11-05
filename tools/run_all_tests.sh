@@ -17,7 +17,7 @@ hr; echo "1/5  Sketch type-check (g++ + stubs; NOT an arduino-cli target build)"
 
 hr; echo "2/5  Firmware core tests (host build, real threads)"
 g++ -std=c++17 -O2 -pthread -DMESQ_HOST_TEST \
-    -I"Device code/Pod_Watch_Binary" -I"Device code/Dongle_Binary" \
+    -I"new_device_code/Pod_Watch_Binary" -I"new_device_code/Dongle_Binary" \
     tools/firmware_tests.cpp -o /tmp/mesq_fw_tests || rc=1
 /tmp/mesq_fw_tests || rc=1
 

@@ -26,8 +26,8 @@ check() {
   printf '  %-34s ' "$name${extra:+ [$extra]}"
   if g++ -std=c++17 -fsyntax-only -DMESQ_STUB_BUILD $extra \
        -I"$ROOT/tools/arduino_stubs" \
-       -I"$ROOT/Device code/Pod_Watch_Binary" \
-       -I"$ROOT/Device code/Dongle_Binary" \
+       -I"$ROOT/new_device_code/Pod_Watch_Binary" \
+       -I"$ROOT/new_device_code/Dongle_Binary" \
        -Wno-write-strings -Wno-unused-value \
        "$out" 2> "$WORK/$name.err"; then
     echo "OK"
@@ -39,9 +39,9 @@ check() {
 }
 
 echo "Type-checking sketches against tools/arduino_stubs/ (NOT a target build):"
-check "$ROOT/Device code/Pod_Watch_Binary/Pod_Watch_Binary.ino"  pod         "-DMESQ_POD_ID=3"
-check "$ROOT/Device code/Pod_Watch_Binary/Pod_Watch_Binary.ino"  pod_instr   "-DMESQ_POD_ID=3 -DMESQ_INSTR=1"
-check "$ROOT/Device code/Pod_Watch_Binary/Pod_Watch_Binary.ino"  pod_sens02  "-DMESQ_POD_ID=3 -DMESQ_DISABLE_UNUSED_DMP_STREAMS=1"
-check "$ROOT/Device code/Dongle_Binary/Dongle_Binary.ino"        hub
-check "$ROOT/Device code/Dongle_Binary/Dongle_Binary.ino"        hub_instr   "-DMESQ_INSTR=1"
+check "$ROOT/new_device_code/Pod_Watch_Binary/Pod_Watch_Binary.ino"  pod         "-DMESQ_POD_ID=3"
+check "$ROOT/new_device_code/Pod_Watch_Binary/Pod_Watch_Binary.ino"  pod_instr   "-DMESQ_POD_ID=3 -DMESQ_INSTR=1"
+check "$ROOT/new_device_code/Pod_Watch_Binary/Pod_Watch_Binary.ino"  pod_sens02  "-DMESQ_POD_ID=3 -DMESQ_DISABLE_UNUSED_DMP_STREAMS=1"
+check "$ROOT/new_device_code/Dongle_Binary/Dongle_Binary.ino"        hub
+check "$ROOT/new_device_code/Dongle_Binary/Dongle_Binary.ino"        hub_instr   "-DMESQ_INSTR=1"
 exit $rc

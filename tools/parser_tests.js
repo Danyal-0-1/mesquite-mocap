@@ -330,7 +330,7 @@ section('C1  host -> hub command frames (HUB-03)');
   const h = Buffer.from(f).toString('hex');
   console.log('     reset frame = ' + h);
   // This exact string is asserted in tools/firmware_tests.cpp, which runs the
-  // C parser from Device code/Dongle_Binary/mesq_hub_core.h against it. If
+  // C parser from new_device_code/Dongle_Binary/mesq_hub_core.h against it. If
   // the two encoders ever diverge, one of the two suites fails.
   ok(h === 'aa55fc010001', 'reset frame matches the C encoder byte for byte');
   ok(f[0] === 0xAA && f[1] === 0x55 && f[2] === 0xFC, 'sync word plus the 0xFC host-command marker');

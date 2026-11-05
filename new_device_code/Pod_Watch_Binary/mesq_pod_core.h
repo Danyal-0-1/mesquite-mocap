@@ -1,5 +1,5 @@
 /* =========================================================================
-   MESQUITE POD CORE  --  Device code/Pod_Watch_Binary/mesq_pod_core.h
+   MESQUITE POD CORE  --  new_device_code/Pod_Watch_Binary/mesq_pod_core.h
 
    The three pieces of pod logic that are (a) easy to get wrong and (b)
    impossible to test on a watch: the cross-core sample handoff, the

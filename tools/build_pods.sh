@@ -56,7 +56,7 @@ if [ "$(uname -s)" = "Darwin" ] && [ -z "${DEVELOPER_DIR:-}" ] \
   export DEVELOPER_DIR=/Library/Developer/CommandLineTools
 fi
 
-SKETCH="Device code/Pod_Watch_Binary"
+SKETCH="new_device_code/Pod_Watch_Binary"
 OUTROOT="${OUTROOT:-build/pods}"
 FQBN="${FQBN:-esp32:esp32:twatch}"
 EXTRA_FLAGS="${EXTRA_FLAGS:-}"

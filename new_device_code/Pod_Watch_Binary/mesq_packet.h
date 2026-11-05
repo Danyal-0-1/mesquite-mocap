@@ -1,5 +1,5 @@
 /* =========================================================================
-   MESQUITE POSE PACKET  --  Device code/Pod_Watch_Binary/mesq_packet.h
+   MESQUITE POSE PACKET  --  new_device_code/Pod_Watch_Binary/mesq_packet.h
 
    PROTOCOL v1. The layout is UNCHANGED from Phase 1 -- 16 bytes, same
    offsets, same endianness -- so every deployed hub, browser and capture

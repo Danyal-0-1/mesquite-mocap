@@ -337,7 +337,7 @@
      HOST -> HUB COMMAND  -- HUB-03
 
      PROTOCOL: [0xAA][0x55][0xFC][cmd][len][payload...][xor over cmd,len,payload]
-     Mirrors mesqCmdBuild() in Device code/Dongle_Binary/mesq_hub_core.h.
+     Mirrors mesqCmdBuild() in new_device_code/Dongle_Binary/mesq_hub_core.h.
 
      WHY this function must exist: the hub used to reset all 17 pods on ANY
      inbound byte, so the browser "rebooted" the fleet by writing the literal

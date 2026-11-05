@@ -1,5 +1,5 @@
 /* =========================================================================
-   MESQUITE HUB CORE  --  Device code/Dongle_Binary/mesq_hub_core.h
+   MESQUITE HUB CORE  --  new_device_code/Dongle_Binary/mesq_hub_core.h
 
    The three pieces of hub logic worth testing off-device: the host -> hub
    command framer, the single-owner USB write queue, and the per-node

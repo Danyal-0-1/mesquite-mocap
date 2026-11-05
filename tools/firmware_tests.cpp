@@ -12,7 +12,7 @@
 
    Build and run:
      g++ -std=c++17 -O2 -pthread -DMESQ_HOST_TEST \
-         -I"Device code/Pod_Watch_Binary" -I"Device code/Dongle_Binary" \
+         -I"new_device_code/Pod_Watch_Binary" -I"new_device_code/Dongle_Binary" \
          tools/firmware_tests.cpp -o /tmp/mesq_fw_tests && /tmp/mesq_fw_tests
    ========================================================================= */
 #include <cstdio>
