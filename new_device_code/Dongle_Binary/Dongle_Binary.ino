@@ -360,11 +360,22 @@ void podTimeoutTask(void *pvParameters) {
 //  Compile-time switch handles both old and new core versions.
 // ============================================================
 
+// The SEND callback signature changed with the ESP32 Arduino core, exactly as
+// the receive callback below did. Core 2.x passed the peer MAC; core 3.x / IDF
+// 5.x passes a wifi_tx_info_t. OnDataRecv already had this guard and OnDataSent
+// did not, so any build against core 3.x failed here. The pod sketch has
+// carried the same guard all along -- this just brings the hub into line.
+#if defined(ESP_ARDUINO_VERSION_MAJOR) && (ESP_ARDUINO_VERSION_MAJOR >= 3)
+void OnDataSent(const wifi_tx_info_t *tx_info, esp_now_send_status_t status) {
+    (void)tx_info;
+#else
 void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
+    (void)mac_addr;
+#endif
     // Was: per-send Serial.println. Removed -- with binary forwarding, the
     // serial line is hot data only, not log noise. Re-enable only when
     // debugging the reboot path.
-    (void)mac_addr; (void)status;
+    (void)status;
 }
 
 #if ESP_IDF_VERSION_MAJOR >= 5

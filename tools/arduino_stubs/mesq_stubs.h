@@ -106,10 +106,15 @@ typedef struct { uint8_t des_addr[6]; } wifi_tx_info_t;
 static inline esp_err_t esp_now_init() { return ESP_OK; }
 static inline esp_err_t esp_now_add_peer(const esp_now_peer_info_t *) { return ESP_OK; }
 static inline esp_err_t esp_now_send(const uint8_t *, const uint8_t *, size_t) { return ESP_OK; }
-// Templated so the stub accepts whichever callback signature the sketch's
-// core-version #if selected, exactly as the real headers do.
-template <typename F> static inline esp_err_t esp_now_register_send_cb(F) { return ESP_OK; }
-template <typename F> static inline esp_err_t esp_now_register_recv_cb(F) { return ESP_OK; }
+// STRICT, deliberately. These were templates accepting any callable, which is
+// what let a real signature mismatch reach an arduino-cli build: the hub's
+// OnDataSent still used the core 2.x signature and this checker happily
+// accepted it. The real headers declare exact function-pointer types, so the
+// stub does too, and a wrong signature now fails here instead of on a device.
+typedef void (*esp_now_send_cb_t)(const wifi_tx_info_t *tx_info, esp_now_send_status_t status);
+typedef void (*esp_now_recv_cb_t)(const esp_now_recv_info_t *info, const uint8_t *data, int len);
+static inline esp_err_t esp_now_register_send_cb(esp_now_send_cb_t) { return ESP_OK; }
+static inline esp_err_t esp_now_register_recv_cb(esp_now_recv_cb_t) { return ESP_OK; }
 static inline const char *esp_get_idf_version() { return "stub"; }
 static inline int esp_reset_reason() { return 1; }
 static inline int64_t esp_timer_get_time() { return 0; }
@@ -204,6 +209,10 @@ struct ICM_20948_I2C {
 
 // ---- AsyncWebServer / WebSocket (hub only) -----------------------------
 #define WS_TEXT 1
+// Model the installed toolchain: ESP32 Arduino core 3.x / IDF 5.x. The sketches
+// branch on these, so getting them wrong means type-checking the branch that
+// will never be compiled for the target.
+#define ESP_ARDUINO_VERSION_MAJOR 3
 #define ESP_IDF_VERSION_MAJOR 5
 typedef enum { WS_EVT_CONNECT, WS_EVT_DISCONNECT, WS_EVT_DATA, WS_EVT_PONG, WS_EVT_ERROR } AwsEventType;
 typedef struct { bool final; size_t index; size_t len; int opcode; } AwsFrameInfo;
