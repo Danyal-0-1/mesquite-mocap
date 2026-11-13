@@ -9,7 +9,7 @@ bool isCharging = false;
 // PROTOCOL: this is the hub's STA MAC and the pod sends UNICAST to it. It was
 // called `broadcastAddress`, which is simply wrong and cost review time every
 // time someone read the radio path looking for a broadcast that isn't there.
-const char *mac_address_str = "DC:DA:0C:17:10:A0";
+const char *mac_address_str = "f0:f5:bd:47:ca:64";
 uint8_t hubAddress[6];
 
 // Array of arrays containing 2 strings each

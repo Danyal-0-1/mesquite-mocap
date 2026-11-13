@@ -1,90 +1,63 @@
-# Flashing a pod — arduino-cli quick reference
+# Flashing a pod — quick reference
 
-Everything needed to put firmware on one T-Watch and know which node it became.
+Build one T-Watch, know which node it became. **Verified working on this machine.**
 
 ---
 
 ## TL;DR
 
 ```bash
-# once per terminal
-alias acli=~/Downloads/squashfs-root/resources/app/lib/backend/resources/arduino-cli
-
-# find the watch
-acli board list
-
-# build + upload pod id 3 (LEFT UP ARM)
-acli compile --fqbn esp32:esp32:twatch \
-  --build-property "build.extra_flags=-DMESQ_POD_ID=3" \
-  --upload -p /dev/ttyACM0 .
+cd <repo root>
+tools/setup_arduino.sh pod        # once, ~3 GB download
+tools/build_pod.sh 3              # compile only
+tools/build_pod.sh 3 /dev/ttyUSB0 # compile + upload
 ```
 
-Change `-DMESQ_POD_ID=<n>` per watch. **Nothing else changes between pods.**
+Only the id changes between pods. Table in §3.
 
 ---
 
-## 1. arduino-cli — you already have it
+## 1. Why there are two build environments
 
-The Arduino IDE AppImage bundles it. No separate install needed:
+**The pod and the hub need different ESP32 core versions, and arduino-cli keeps
+one core version per data directory.** They cannot share.
 
-```
-~/Downloads/squashfs-root/resources/app/lib/backend/resources/arduino-cli
-```
+| Target | Core | Why |
+|---|---|---|
+| **pod** — T-Watch 2019 | **2.0.17** | `TTGO_TWatch_Library` vendors its own `TFT_eSPI` and `lv_lib_png`. They use direct GPIO register access and lodepng signatures that IDF 5.x changed. The pod **does not build** on core 3.x — it is a whole graphics stack, not a few call sites. |
+| **hub** — T-Display-S3 | **3.x** | `Dongle_Binary.ino` targets 3.x/IDF 5.x, and its async libraries are the mathieucarbou forks, which are the ones maintained for 3.x. |
 
-Verified on this machine: **v1.6.0**, esp32 core **3.3.12**. Make it permanent so you
-stop typing the path:
+`tools/setup_arduino.sh` builds both under `~/.mesquite-arduino/`. **Neither touches
+`~/Arduino` or `~/.arduino15`**, so your Arduino IDE is unaffected.
 
-```bash
-echo "alias acli=~/Downloads/squashfs-root/resources/app/lib/backend/resources/arduino-cli" >> ~/.bashrc
-source ~/.bashrc
-```
-
-> If you ever move or delete the extracted AppImage, the alias breaks. A standalone
-> install instead: `curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh`
+> arduino-cli does **not** expand `~` in a config file — a literal `~` makes it
+> create a directory actually *named* `~` in the working directory. That is why
+> `tools/arduino_env/mkconfig.sh` generates the config with absolute paths at run
+> time instead of checking a YAML into git.
 
 ---
 
 ## 2. One-time setup
 
 ```bash
-acli core update-index
-acli core install esp32:esp32           # 3.3.12 confirmed working
-acli lib install "SparkFun 9DoF IMU Breakout - ICM 20948 - Arduino Library"
+tools/setup_arduino.sh pod     # or: hub, or: both
 ```
 
-### ⚠ Do this first — the T-Watch library is NOT in the Library Manager
+Installs core 2.0.17, the SparkFun ICM-20948 library, `WebSockets`
+(Links2004/Markus Sattler), and clones `TTGO_TWatch_Library` — which is **not** in
+the Library Manager and cannot be installed with `lib install`.
 
-`Pod_Watch_Binary.ino` includes `<LilyGoWatch.h>` on **line 2**, and that library is
-not installed and **cannot** be installed with `acli lib install`.
-
-Until you clone it, *every* build stops on the same error regardless of what else you
-do — including builds with a perfectly good `MESQ_POD_ID`:
-
-```
-Pod_Watch_Binary.ino:2:10: fatal error: LilyGoWatch.h: No such file or directory
-```
-
-This is the current state of this machine. **Nothing else in this guide will work
-until this step is done.**
-
-```bash
-git clone --depth 1 https://github.com/Xinyuan-LilyGO/TTGO_TWatch_Library \
-  ~/Arduino/libraries/TTGO_TWatch_Library
-```
-
-Check it took:
-
-```bash
-ls ~/Arduino/libraries/ | grep -i watch
-```
+arduino-cli itself needs no install: the Arduino IDE AppImage bundles it at
+`~/Downloads/squashfs-root/resources/app/lib/backend/resources/arduino-cli`
+(v1.6.0 here). The scripts find it automatically.
 
 ---
 
 ## 3. Pod ID table
 
-`MESQ_POD_ID` is the **only** thing that distinguishes one pod image from another.
+`MESQ_POD_ID` is the **only** difference between pod images.
 
-| ID | Watch screen | Browser bone | Body segment |
+| ID | Watch screen | Browser bone | Segment |
 |---:|---|---|---|
 | 0 | HEAD | `Head` | head |
 | 1 | SPINE | `Spine` | upper back |
@@ -104,16 +77,15 @@ ls ~/Arduino/libraries/ | grep -i watch
 | 15 | LEFT / SHOULDER | `LeftShoulder` | left shoulder † |
 | 16 | RIGHT / SHOULDER | `RightShoulder` | right shoulder † |
 
-† Ids 15 and 16 exist in the firmware but the browser does **not** currently drive
-those bones. Flashing them is harmless; they just won't move the rig.
+† In the firmware, but the browser does not currently drive those bones.
 
-**Screen colour is a fast visual check** that the right image went on:
+**Screen colour** is a fast check that the right image landed:
 
 | Colour | IDs |
 |---|---|
-| white | 0, 1, 2 (head, spine, hips) |
-| blue-grey | 3, 4, 5, 15 (left arm chain) |
-| orange | 6, 7, 8, 16 (right arm chain) |
+| white | 0, 1, 2 |
+| blue-grey | 3, 4, 5, 15 (left arm) |
+| orange | 6, 7, 8, 16 (right arm) |
 | purple | 9, 10, 11 (left leg) |
 | teal | 12, 13, 14 (right leg) |
 
@@ -122,93 +94,86 @@ those bones. Flashing them is harmless; they just won't move the rig.
 ## 4. Build and upload
 
 ```bash
-acli board list                      # find the port, e.g. /dev/ttyACM0
+tools/build_pod.sh 3                   # compile only
+tools/build_pod.sh 3 /dev/ttyUSB0      # compile + upload
 ```
 
-**Compile only** (fast check before touching hardware):
-
-```bash
-acli compile --fqbn esp32:esp32:twatch \
-  --build-property "build.extra_flags=-DMESQ_POD_ID=3" .
-```
-
-**Compile and upload**:
-
-```bash
-acli compile --fqbn esp32:esp32:twatch \
-  --build-property "build.extra_flags=-DMESQ_POD_ID=3" \
-  --upload -p /dev/ttyACM0 .
-```
-
-Board defaults are correct as shipped — PSRAM enabled, default partition scheme.
-No `--board-options` needed.
+Find the port with `acli board list`. **The T-Watch 2019 appears as `/dev/ttyUSB0`**,
+not `ttyACM` — it uses a CP210x/CH340 USB-UART bridge.
 
 ### Instrumented build
 
-Adds the 1 Hz `[INSTR]` diagnostic line (Quat6 rate, FIFO timing, send histogram,
-quaternion validity, sample age):
+Adds the 1 Hz `[INSTR]` line (Quat6 rate, FIFO timing, send histogram, quaternion
+validity, sample age):
 
 ```bash
-acli compile --fqbn esp32:esp32:twatch \
-  --build-property "build.extra_flags=-DMESQ_POD_ID=3 -DMESQ_INSTR=1" \
-  --upload -p /dev/ttyACM0 .
+CFG=$(tools/arduino_env/mkconfig.sh pod)
+acli --config-file "$CFG" compile --fqbn esp32:esp32:twatch \
+  --build-property "compiler.cpp.extra_flags=-DMESQ_POD_ID=3 -DMESQ_INSTR=1" \
+  new_device_code/Pod_Watch_Binary
 ```
+
+Measured cost of the instrumentation: **+1,864 bytes of flash** (939,153 → 941,017).
+
+### ⚠ `compiler.cpp.extra_flags`, never `build.extra_flags`
+
+`build.extra_flags` **replaces** the board's own defines rather than appending, so it
+silently wipes `ARDUINO_USB_CDC_ON_BOOT` and friends. Library platform detection then
+fails in confusing ways — `WebSockets` falls through to its W5100 branch and dies on
+a missing `Ethernet.h`. `compiler.cpp.extra_flags` is empty by default and appends
+cleanly.
 
 ---
 
-## 5. Confirm which node you just made
+## 5. Confirm which node you made
 
-Three independent checks — use at least the first two.
+**1. Watch screen** — bone name in its chain colour, readable across the room.
 
-**1. The watch screen** — bone name in its chain colour. Readable across the room.
-
-**2. The boot banner** —
+**2. Boot banner:**
 
 ```bash
-acli monitor -p /dev/ttyACM0 -c baudrate=115200
+acli monitor -p /dev/ttyUSB0 -c baudrate=115200
 ```
 
 ```
 ===== MESQUITE POD BOOT =====
 FW_BUILD      : <date> <time>
-POD_ID        : 3            ← this is the one that matters
-IDF_VERSION   : ...
+POD_ID        : 3            ← the one that matters
 TICK_RATE_HZ  : 1000
 INIT_RESULT   : IMU_OK DMP_OK
 ```
 
 `INIT_RESULT : IMU_FAIL` or a **red SENSOR FAULT screen** means the IMU or DMP did
-not come up — that pod is not usable. It no longer hangs silently.
+not come up. It no longer hangs silently.
 
-**3. In the browser** — `window._podRx` shows per-bone packet counts. A missing key
-means that id never arrived.
+**3. Browser** — `window._podRx` shows per-bone counts. A missing key means that id
+never arrived.
 
 ---
 
-## 6. All 17 at once
+## 6. All 17
 
 ```bash
-cd <repo root>
-tools/build_pods.sh            # all 17 images + SHA-256 manifest + duplicate check
-tools/build_pods.sh 3          # just id 3
+for i in $(seq 0 16); do tools/build_pod.sh $i || break; done
 ```
 
-The manifest matters: two pods with the same id is **silent at runtime** and looks
-exactly like "a node didn't connect."
+Or `tools/build_pods.sh` for images plus a SHA-256 manifest and a duplicate-image
+check. Two pods sharing an id is **silent at runtime** and looks exactly like "a node
+didn't connect."
 
 ---
 
 ## 7. Why the id is a build flag
 
-The build **fails** if `MESQ_POD_ID` is undefined or outside `0..16`:
+The build **fails** if `MESQ_POD_ID` is missing or outside `0..16`:
 
 ```
 #error "MESQ_POD_ID is not defined. Build with -DMESQ_POD_ID=<0..16>"
 ```
 
-That is deliberate. Identity used to be chosen by uncommenting one of 17 lines;
-flashing a 17-watch fleet that way eventually produces a duplicate, which costs a
-session. A build error costs seconds.
+Deliberate. Identity used to be chosen by uncommenting one of 17 lines; flashing a
+17-watch fleet that way eventually produces a duplicate, which costs a session. A
+build error costs seconds.
 
 ---
 
@@ -216,19 +181,26 @@ session. A build error costs seconds.
 
 | Error | Cause | Fix |
 |---|---|---|
-| `LilyGoWatch.h: No such file` | T-Watch library missing | §2 — clone it. **This fails at line 2, so it masks every other error until fixed** |
-| `MESQ_POD_ID is not defined` | no `--build-property` | add `-DMESQ_POD_ID=<n>`. You will only reach this error once the T-Watch library is present |
-| `mbedtls_md5_starts_ret was not declared` | mbedtls 3.x removed `_ret` functions | wrong `ESPAsyncWebServer` fork — see below |
-| `undefined reference to pxCurrentTCB` | SMP FreeRTOS removed the single-core symbol | same root cause |
-| Port not listed | watch asleep, or a charge-only cable | wake it, try another cable, check `ls /dev/ttyACM*` |
-| Upload times out | boot mode | hold BOOT while upload starts |
+| `LilyGoWatch.h: No such file` | T-Watch library missing | `tools/setup_arduino.sh pod` |
+| `MESQ_POD_ID is not defined` | no id supplied | `tools/build_pod.sh <n>` |
+| `Ethernet.h: No such file` | used `build.extra_flags` | use `compiler.cpp.extra_flags` — §4 |
+| `ledcSetup not declared` / `'GPIO' was not declared` | building the pod on **core 3.x** | use the pod environment (core 2.0.17) |
+| `main file missing from sketch` | ran with `.` from the wrong directory | `cd` to the sketch, or pass its full path |
+| `mbedtls_md5_starts_ret` / `pxCurrentTCB` | **hub** built against the wrong async forks | `tools/setup_arduino.sh hub` installs mathieucarbou's |
+| Port not listed | watch asleep, or a charge-only cable | wake it; `ls /dev/ttyUSB*` |
+| Upload times out | boot mode | hold BOOT as upload starts |
 
-### The async-library forks
+---
 
-The **hub** sketch needs `ESPAsyncWebServer` and `AsyncTCP` **by mathieucarbou** —
-those are the ones maintained for ESP32 core 3.x. Other forks (lacamera, dvarrel)
-predate it and fail with the mbedtls and `pxCurrentTCB` errors above.
+## 9. Verified
 
-IDE → Library Manager → search each → install the **mathieucarbou** entry.
+On this machine, core 2.0.17, arduino-cli 1.6.0:
 
-This does not affect the pod, which uses neither library.
+| Build | Result |
+|---|---|
+| `tools/build_pod.sh 3` | **939,153 bytes, 14% flash** |
+| `tools/build_pod.sh 14` | 939,153 bytes |
+| id 3 + `MESQ_INSTR=1` | 941,017 bytes (+1,864) |
+| no id | fails with the `#error`, as designed |
+
+Compile only — **not yet flashed to a watch.**
