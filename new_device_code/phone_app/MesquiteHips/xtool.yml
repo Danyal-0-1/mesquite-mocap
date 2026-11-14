@@ -1,0 +1,7 @@
+# xtool packaging for Mesquite Hips (see ../BUILD_ON_LINUX.md).
+# bundleID must be unique to your Apple ID: if xtool reports that the App ID
+# is not available, change the last part, e.g. cc.mesquite.hips.yourname.
+version: 1
+bundleID: cc.mesquite.hips
+infoPath: Info.plist
+iconPath: Icon.png
