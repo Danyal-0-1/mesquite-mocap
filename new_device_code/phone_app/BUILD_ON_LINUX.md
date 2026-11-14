@@ -97,7 +97,6 @@ xtool setup
 ```sh
 git clone https://github.com/Danyal-0-1/mesquite-mocap.git
 cd mesquite-mocap
-git checkout phone-app-ios          # the branch this app is on, until it is merged into main
 ```
 
 Optionally, run the checks that need no phone. They take about a minute and use `swiftc` and `node`:
